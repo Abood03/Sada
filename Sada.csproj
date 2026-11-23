@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests/**</DefaultItemExcludes>
+    <AssemblyName>Sada</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Sada.ico</ApplicationIcon>
+    <Version>1.2.0</Version>
+    <EnableLyricsStudio Condition="'$(EnableLyricsStudio)' == ''">true</EnableLyricsStudio>
+    <DefineConstants Condition="'$(EnableLyricsStudio)' == 'true'">$(DefineConstants);SADA_LYRICS_STUDIO</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(EnableLyricsStudio)' != 'true'">
+    <Compile Remove="LyricsStudio.cs;LyricRecording.cs;App.LyricsStudio.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Include="../../SongSync.cs" Link="SongSync.cs" />
+    <Compile Include="../../MediaService.cs" Link="MediaService.cs" />
+    <Compile Include="../../AudioEngine.cs" Link="AudioEngine.cs" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
+</Project>

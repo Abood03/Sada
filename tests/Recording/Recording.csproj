@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Include="../../MediaService.cs" Link="MediaService.cs" />
+    <Compile Include="../../LyricRecording.cs" Link="LyricRecording.cs" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
+</Project>
