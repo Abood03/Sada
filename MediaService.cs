@@ -22,12 +22,15 @@ using MediaSessionManager = Windows.Media.Control.GlobalSystemMediaTransportCont
 
 namespace Sada;
 
+public enum MediaSourcePreference { Automatic, Spotify, YouTube }
+
 public sealed record MediaSnapshot(
     string Title, string Artist, string Album, byte[]? Artwork, TimeSpan Position,
     TimeSpan Duration, bool IsPlaying, string Source)
 {
     public bool HasTrack => !string.IsNullOrWhiteSpace(Title);
-    internal string LyricsKey => HasTrack ? string.Join("\n", Source, Artist, Title, Album) : "";
+    internal string LyricsKey => !HasTrack ? "" : YouTubeVideoId is { } id ? "youtube:" + id : string.Join("\n", Source, Artist, Title, Album);
+    internal string? YouTubeVideoId { get; init; }
 
     internal DateTimeOffset LastUpdated { get; init; }
     internal double PlaybackRate { get; init; } = 1;
@@ -52,16 +55,25 @@ public sealed class MediaService : IDisposable
     private MediaSessionManager? manager;
     private MediaSession? session;
     private MediaSnapshot current = MediaSnapshot.Empty;
+    private sealed record BrowserPlaybackState(MediaSnapshot? Snapshot, bool Connected);
+    private BrowserPlaybackState youtube = new(null, false);
     private int metadataVersion;
     private int loadedMetadataVersion = -1;
     private DateTimeOffset nextMetadataCheck;
     private volatile bool disposed;
+    internal MediaSourcePreference SourcePreference { get; set; }
+    internal Func<string, bool>? IsBrowserSource { get; set; }
+
+    internal void SetYouTubePlayback(MediaSnapshot? snapshot, bool connected) =>
+        Volatile.Write(ref youtube, new BrowserPlaybackState(snapshot, connected));
 
     public MediaSnapshot Current
     {
         get
         {
-            MediaSnapshot snapshot = Volatile.Read(ref current);
+            var (browserPlayback, browserConnected) = Volatile.Read(ref youtube);
+            MediaSnapshot snapshot = SelectPlayback(Volatile.Read(ref current), browserPlayback, browserConnected,
+                SourcePreference, IsBrowserSource);
             if (!snapshot.IsPlaying || snapshot.LastUpdated == default)
                 return snapshot;
 
@@ -72,6 +84,19 @@ public sealed class MediaService : IDisposable
 
             return snapshot with { Position = position };
         }
+    }
+
+    internal static MediaSnapshot SelectPlayback(MediaSnapshot windows, MediaSnapshot? browserPlayback, bool browserConnected,
+        MediaSourcePreference preference, Func<string, bool>? isBrowserSource)
+    {
+        var spotify = IsSpotify(windows.Source);
+        var browser = isBrowserSource?.Invoke(windows.Source) == true;
+        if (preference == MediaSourcePreference.Spotify) return spotify ? windows : MediaSnapshot.Empty;
+        if (preference == MediaSourcePreference.YouTube)
+            return browserConnected ? browserPlayback ?? MediaSnapshot.Empty : browser ? windows : MediaSnapshot.Empty;
+        if (spotify && windows.IsPlaying) return windows;
+        if (browserPlayback is { } video && (video.IsPlaying || browser || !windows.IsPlaying)) return video;
+        return browserConnected && browser ? MediaSnapshot.Empty : windows;
     }
 
     public async Task RefreshAsync()
@@ -193,7 +218,7 @@ public sealed class MediaService : IDisposable
         await sessionAccess.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (disposed || LyricRecordingKey.From(Current) != recording) return false;
+            if (disposed || Current.YouTubeVideoId is not null || LyricRecordingKey.From(Current) != recording) return false;
             manager ??= await MediaSessionManager.RequestAsync().AsTask().ConfigureAwait(false);
             SetSession(ChooseSession(manager));
             if (session is not { } active) return false;
@@ -224,7 +249,8 @@ public sealed class MediaService : IDisposable
     public Task<LyricsTrack?> FetchLyricsAsync(CancellationToken cancellationToken = default) =>
         FetchLyricsAsync(Current, cancellationToken);
 
-    public async Task<LyricsTrack?> FetchLyricsAsync(MediaSnapshot track, CancellationToken cancellationToken = default)
+    public async Task<LyricsTrack?> FetchLyricsAsync(MediaSnapshot track, CancellationToken cancellationToken = default,
+        bool strictDuration = false, bool allowDurationMismatch = false)
     {
         if (!track.HasTrack || string.IsNullOrWhiteSpace(track.Artist))
             return null;
@@ -234,12 +260,13 @@ public sealed class MediaService : IDisposable
         if (!string.IsNullOrWhiteSpace(track.Album))
             query += $"&album_name={Uri.EscapeDataString(track.Album)}";
         int duration = (int)Math.Round(track.Duration.TotalSeconds);
-        if (duration is >= 1 and <= 3600)
+        if (!allowDurationMismatch && duration is >= 1 and <= 3600)
             query += $"&duration={duration.ToString(CultureInfo.InvariantCulture)}";
 
-        using var direct = await RequestLyricsAsync("api/get?" + query, cancellationToken).ConfigureAwait(false);
-        var exact = direct?.RootElement is { } record ? ParseRecord(record, track.Duration) : null;
-        if (exact is { Lines.Count: > 0 } || direct is not null && IsInstrumental(direct.RootElement))
+        using var direct = allowDurationMismatch ? null : await RequestLyricsAsync("api/get?" + query, cancellationToken).ConfigureAwait(false);
+        bool directMatches = direct is not null && (!strictDuration || MatchesDuration(direct.RootElement, duration));
+        var exact = directMatches ? ParseRecord(direct!.RootElement, track.Duration) : null;
+        if (exact is { Lines.Count: > 0 } || directMatches && IsInstrumental(direct!.RootElement))
             return exact;
 
         using var search = await RequestLyricsAsync("api/search?" + signature, cancellationToken).ConfigureAwait(false);
@@ -257,16 +284,19 @@ public sealed class MediaService : IDisposable
             bool sameAlbum = album.Length > 0 && Normalize(ReadString(candidate, "albumName")) == album;
             double difference = candidate.TryGetProperty("duration", out var seconds) && seconds.TryGetDouble(out var length)
                 ? Math.Abs(length - duration) : double.PositiveInfinity;
-            if (duration > 0 && difference > (sameAlbum ? 7 : 4)) continue;
+            if (!allowDurationMismatch && duration > 0 && difference > (sameAlbum && !strictDuration ? 7 : 4)) continue;
 
             var lyrics = ParseRecord(candidate, track.Duration);
             if (lyrics is null) continue;
             var score = (lyrics.Lines.Count > 0 ? 30 : 0) + (lyrics.HasAuthoredWordTiming ? 9 : 0) + (sameAlbum ? 8 : 0) +
-                (duration > 0 ? 7 - difference : 0);
+                (duration > 0 ? 7 - Math.Min(difference, allowDurationMismatch ? 15 : double.MaxValue) : 0);
             if (score > bestScore) { best = lyrics; bestScore = score; }
         }
         return best;
     }
+
+    static bool MatchesDuration(JsonElement candidate, int duration) => duration > 0 &&
+        candidate.TryGetProperty("duration", out var value) && value.TryGetDouble(out var seconds) && Math.Abs(seconds - duration) <= 4;
 
     private static bool IsInstrumental(JsonElement record) =>
         record.TryGetProperty("instrumental", out var flag) && flag.ValueKind == JsonValueKind.True;
@@ -358,7 +388,7 @@ public sealed class MediaService : IDisposable
         await sessionAccess.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (disposed)
+            if (disposed || Current.YouTubeVideoId is not null)
                 return false;
 
             manager ??= await MediaSessionManager.RequestAsync().AsTask().ConfigureAwait(false);
@@ -375,12 +405,23 @@ public sealed class MediaService : IDisposable
         }
     }
 
-    private static MediaSession? ChooseSession(MediaSessionManager manager)
+    private MediaSession? ChooseSession(MediaSessionManager manager)
     {
         MediaSession? selected = manager.GetCurrentSession();
+        var available = manager.GetSessions();
+        if (SourcePreference == MediaSourcePreference.YouTube)
+        {
+            var browsers = available.Where(candidate => IsBrowserSource?.Invoke(candidate.SourceAppUserModelId) == true).ToArray();
+            if (selected is not null && IsBrowserSource?.Invoke(selected.SourceAppUserModelId) == true && IsPlaying(selected))
+                return selected;
+            return browsers.FirstOrDefault(IsPlaying)
+                ?? browsers.FirstOrDefault(candidate => ReferenceEquals(candidate, session))
+                ?? browsers.FirstOrDefault(candidate => candidate.SourceAppUserModelId == session?.SourceAppUserModelId)
+                ?? browsers.OrderByDescending(TimelineUpdatedAt).FirstOrDefault();
+        }
+        if (SourcePreference == MediaSourcePreference.Spotify) return available.FirstOrDefault(IsSpotify);
         if (selected is not null && IsSpotify(selected) && IsPlaying(selected))
             return selected;
-        var available = manager.GetSessions();
         var spotify = available.FirstOrDefault(IsSpotify);
         if (spotify is not null && IsPlaying(spotify)) return spotify;
         if (selected is not null && IsPlaying(selected)) return selected;
@@ -388,7 +429,15 @@ public sealed class MediaService : IDisposable
     }
 
     private static bool IsSpotify(MediaSession session) =>
-        session.SourceAppUserModelId.Contains("spotify", StringComparison.OrdinalIgnoreCase);
+        IsSpotify(session.SourceAppUserModelId);
+
+    private static bool IsSpotify(string source) => source.Contains("spotify", StringComparison.OrdinalIgnoreCase);
+
+    private static DateTimeOffset TimelineUpdatedAt(MediaSession candidate)
+    {
+        try { return candidate.GetTimelineProperties().LastUpdatedTime; }
+        catch (Exception exception) when (IsMediaFailure(exception)) { return default; }
+    }
 
     private static bool IsPlaying(MediaSession candidate)
     {

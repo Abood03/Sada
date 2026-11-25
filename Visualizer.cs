@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 
 namespace Sada;
@@ -40,13 +41,22 @@ public sealed class Visualizer : FrameworkElement
     private const int HistoryLength = 44;
     private const int ColorSteps = 32;
     private const int AlphaSteps = 16;
+    private const int MaximumFadingLayers = 2;
+    private static readonly TimeSpan TransitionDuration = TimeSpan.FromMilliseconds(220);
     private const double Tau = Math.PI * 2;
+    private readonly record struct Appearance(VisualMode Mode, VisualDirection Direction, VisualPalette Palette,
+        VisualAtmosphere Atmosphere, string? CustomColor, string? CustomAccent, AlbumPalette? Artwork);
     private readonly float[] bands = new float[BandCount];
     private readonly float[][] history = new float[HistoryLength][];
     private readonly SolidColorBrush[,] colors = new SolidColorBrush[ColorSteps, AlphaSteps];
     private readonly Color[] gradient = new Color[ColorSteps];
     private readonly int[] waterfallPixels = new int[BandCount * HistoryLength];
     private readonly Stopwatch clock = Stopwatch.StartNew();
+    private readonly List<DrawingGroup> fadingLayers = new(MaximumFadingLayers);
+    private DrawingGroup liveLayer = new();
+    private Appearance? renderedAppearance;
+    private Size renderedSize;
+    private TimeSpan fadeUntil;
     private WriteableBitmap? waterfall;
     private VisualPalette? previousPalette;
     private string? previousCustomColor;
@@ -92,6 +102,69 @@ public sealed class Visualizer : FrameworkElement
         base.OnRender(drawing);
         if (ActualWidth < 2 || ActualHeight < 2) return;
 
+        var appearance = new Appearance(Settings.Mode, Settings.Direction, Settings.Palette, Settings.Atmosphere,
+            Settings.Palette == VisualPalette.Custom ? Settings.CustomColor : null,
+            Settings.Palette == VisualPalette.Custom ? Settings.CustomAccent : null, ArtworkColors);
+        var size = RenderSize;
+        var now = clock.Elapsed;
+        bool animate = SystemParameters.ClientAreaAnimation;
+        if (fadingLayers.Count != 0 && (!animate || now >= fadeUntil || renderedSize != size))
+            FinishTransition();
+        if (animate && renderedAppearance is { } previous && previous != appearance && renderedSize == size)
+            BeginTransition(now);
+        renderedAppearance = appearance;
+        renderedSize = size;
+
+        using (var frameDrawing = liveLayer.Open())
+            DrawFrame(frameDrawing);
+        foreach (DrawingGroup layer in fadingLayers)
+            drawing.DrawDrawing(layer);
+        drawing.DrawDrawing(liveLayer);
+    }
+
+    private void BeginTransition(TimeSpan now)
+    {
+        double liveOpacity = liveLayer.Opacity;
+        if (liveOpacity >= .02)
+        {
+            if (fadingLayers.Count == MaximumFadingLayers)
+            {
+                int faintest = fadingLayers[0].Opacity <= fadingLayers[1].Opacity ? 0 : 1;
+                fadingLayers.RemoveAt(faintest);
+            }
+            fadingLayers.Add(liveLayer);
+        }
+
+        foreach (DrawingGroup layer in fadingLayers)
+            AnimateOpacity(layer, layer.Opacity, 0);
+        liveLayer = new DrawingGroup();
+        AnimateOpacity(liveLayer, 0, 1);
+        fadeUntil = now + TransitionDuration;
+        // A retained waterfall drawing still references its original bitmap.
+        // Recreate only that mode's buffer so its outgoing image stays intact.
+        waterfall = null;
+    }
+
+    private void FinishTransition()
+    {
+        fadingLayers.Clear();
+        liveLayer.BeginAnimation(DrawingGroup.OpacityProperty, null);
+        liveLayer.Opacity = 1;
+    }
+
+    private static void AnimateOpacity(DrawingGroup layer, double from, double to)
+    {
+        layer.BeginAnimation(DrawingGroup.OpacityProperty, null);
+        layer.Opacity = to;
+        layer.BeginAnimation(DrawingGroup.OpacityProperty, new DoubleAnimation(from, to, TransitionDuration)
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
+            FillBehavior = FillBehavior.Stop
+        });
+    }
+
+    private void DrawFrame(DrawingContext drawing)
+    {
         var paletteChanged = UpdatePalette();
         var historyChanged = UpdateMotion();
         var opacity = Limit(Settings.Opacity, 0, 1, 1);

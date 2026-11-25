@@ -9,6 +9,24 @@ public enum ClockFace { Digital, Stacked, Minimal, Analog, Words }
 public enum CardLayout { Compact, Centered, Cover, TextOnly }
 public enum LyricsStyle { Flow, Single, Karaoke, Subtitles, Panel, Marquee }
 public enum Backdrop { Studio, Album, Image, Transparent }
+public enum NeonColors { Sada, WarmWhite, Visualizer, Album, Custom }
+public enum NeonIdle { ShowTube, Fade, Hide }
+
+public sealed class NeonOptions
+{
+    public NeonLettering Lettering { get; set; }
+    public NeonColors Colors { get; set; } = NeonColors.Album;
+    public NeonReaction Reaction { get; set; }
+    public NeonFlicker Flicker { get; set; }
+    public NeonIdle Idle { get; set; }
+    public bool Acrylic { get; set; }
+    public bool ShowArtist { get; set; } = true;
+    public bool ShowNote { get; set; } = true;
+    public bool ClickToPlay { get; set; }
+    public double ReactionStrength { get; set; } = 1;
+    public string TitleColor { get; set; } = "#70F2D1";
+    public string ArtistColor { get; set; } = "#B6A4FF";
+}
 
 public sealed class WidgetOptions
 {
@@ -56,6 +74,10 @@ public sealed class SceneOptions
     public bool FullMedia { get; set; } = true;
     public bool FullClock { get; set; }
     public bool FullLyrics { get; set; }
+    public bool FullNeon { get; set; }
+    public double? FullNeonX { get; set; }
+    public double? FullNeonY { get; set; }
+    public NeonOptions Neon { get; set; } = new();
     public int GlowStyle { get; set; }
     public double GlowStrength { get; set; } = .58;
     public bool AllMonitors { get; set; }
@@ -71,7 +93,8 @@ public sealed class SceneOptions
             WidgetKind.Visualizer => new WidgetOptions { Width = 382, Height = 390 },
             WidgetKind.Lyrics => new WidgetOptions { Width = 500, Height = 175 },
             WidgetKind.Clock => new WidgetOptions { Width = 360, Height = 158 },
-            WidgetKind.Media or WidgetKind.Neon => new WidgetOptions { Width = 380, Height = 192 },
+            WidgetKind.Media => new WidgetOptions { Width = 380, Height = 192 },
+            WidgetKind.Neon => new WidgetOptions { Width = 570, Height = 168 },
             WidgetKind.CursorTrail or WidgetKind.ScreenGlow => new WidgetOptions { Locked = true, Placement = Placement.OnTop },
             WidgetKind.Snow or WidgetKind.Environment or WidgetKind.Wallpaper or WidgetKind.AlbumBackdrop or WidgetKind.Span
                 => new WidgetOptions { Locked = true },
@@ -98,6 +121,8 @@ public sealed class Preferences
     public bool HiddenWidgets { get; set; }
     public int LyricsSetupVersion { get; set; }
     public bool AdaptiveLyricsTiming { get; set; } = true;
+    public MediaSourcePreference PlaybackSource { get; set; }
+    public Dictionary<string, YouTubeSongMatch> YouTubeMatches { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, double> SongLyricOffsets { get; set; } = new(StringComparer.Ordinal);
 
     public static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Sada");
@@ -122,3 +147,5 @@ public sealed class Preferences
     public static SceneOptions Clone(SceneOptions scene) =>
         JsonSerializer.Deserialize<SceneOptions>(JsonSerializer.Serialize(scene, Json), Json)!;
 }
+
+public sealed record YouTubeSongMatch(string Title, string Artist);

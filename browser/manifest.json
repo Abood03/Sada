@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Sada · YouTube playback",
+  "description": "Sends YouTube playback timing to the local Sada desktop app.",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxgW+EuP3p9q8QxN5jgVB76LstsZAFNPY3nzuARLGhj75gw7Ek9s2A/Bu9aNX3E7a2loBupDUoHphm4f9HOv1ToT4lSUIGIj+jXxzoh7BR1rJ65QJUYCjuYSwsw7STP2g8jl+qJyE2JpVqFHlZ0Z/+k3C9WC54NXPlnXlsjrRXaaVCbwISDdKYm6kW5o9uHFEg7eBh8QJ34YS3WfeSEMkrdoKcq6mupW0xCGyFbjyHPbz/vZ1CTH+UKp3+1f6WAZQUWN9oEFc4xuugchAKKDS1proR3gP0somzqyWqr4uZNBHPsDLCJRM+3+dbJsbVd7I+eF0w+8qswmsur0n+uNNawIDAQAB",
+  "permissions": ["nativeMessaging"],
+  "host_permissions": ["https://www.youtube.com/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["watch.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

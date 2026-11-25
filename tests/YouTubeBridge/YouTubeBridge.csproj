@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Include="../../GlobalUsings.cs" Link="GlobalUsings.cs" />
+    <Compile Include="../../YouTubeBridge.cs" Link="YouTubeBridge.cs" />
+  </ItemGroup>
+</Project>

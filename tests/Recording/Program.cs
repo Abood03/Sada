@@ -16,6 +16,29 @@ Check(LyricRecordingKey.From(a with { Title = "   النجم ", Artist = " EXAMP
     "key survives normalization and sub-millisecond reporting jitter");
 Check(LyricRecordingKey.From(a with { Duration = TimeSpan.Zero }) is null &&
     LyricRecordingKey.From(b) != key && LyricRecordingKey.From(c) != key, "key distinguishes recordings and requires a valid duration");
+var video = a with { Source = "YouTube", YouTubeVideoId = "AaBbCCD_ee0" };
+var otherVideo = video with { YouTubeVideoId = "AaBbCCD_ee1" };
+var browser = a with { Source = "MSEdge" };
+Check(LyricRecordingKey.From(video) == LyricRecordingKey.From(video with { Title = "Retitled", Duration = Ms(8300) }) &&
+    LyricRecordingKey.From(video) != LyricRecordingKey.From(otherVideo) && LyricRecordingKey.From(video) != key,
+    "YouTube correction follows upload id even when its title or reported duration changes");
+using (var media = new MediaService())
+{
+    media.IsBrowserSource = source => source == "MSEdge";
+    media.SetYouTubePlayback(video, true);
+    Check(MediaService.SelectPlayback(a, video, true, MediaSourcePreference.Automatic, media.IsBrowserSource) == a &&
+        MediaService.SelectPlayback(a, video, true, MediaSourcePreference.YouTube, media.IsBrowserSource) == video,
+        "Automatic follows playing Spotify while YouTube can be selected explicitly");
+    Check(MediaService.SelectPlayback(browser, null, true, MediaSourcePreference.YouTube, media.IsBrowserSource) == MediaSnapshot.Empty &&
+        MediaService.SelectPlayback(browser, null, false, MediaSourcePreference.YouTube, media.IsBrowserSource) == browser,
+        "browser fallback is suppressed when the add-on reports no playable YouTube video");
+    media.SourcePreference = MediaSourcePreference.YouTube;
+    var paused = video with { Position = Ms(3200), IsPlaying = false, LastUpdated = DateTimeOffset.UtcNow.AddSeconds(-1) };
+    media.SetYouTubePlayback(paused, true);
+    Check(media.Current.Position == Ms(3200), "paused browser video freezes its lyrics clock");
+    media.SetYouTubePlayback(paused with { Position = Ms(700) }, true);
+    Check(media.Current.Position == Ms(700), "backward seek replaces the old browser playhead");
+}
 
 var draft = new LyricTimingDraft(source, Ms(8000), Ms(200));
 var firstPreview = draft.Preview();

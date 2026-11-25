@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Forms = System.Windows.Forms;
 
 namespace Sada;
@@ -13,9 +14,12 @@ internal sealed class DesktopWidget : Window
     readonly System.Drawing.Rectangle bounds;
     readonly bool fullscreen;
     readonly WidgetView view;
+    readonly FullNeonOverlay? fullNeon;
     readonly Border shell;
     readonly System.Windows.Controls.Primitives.Thumb resize;
     Point? dragStart;
+    bool dragged;
+    readonly DispatcherTimer? neonClick;
     System.Drawing.Rectangle dragBounds;
     string lastPlacement = "";
     bool desktopAttached;
@@ -55,11 +59,22 @@ internal sealed class DesktopWidget : Window
         if (fullscreen)
         {
             resize.Visibility = Visibility.Collapsed;
+            fullNeon = new FullNeonOverlay(app);
+            grid.Children.Add(fullNeon);
             PreviewKeyDown += HandleKeys;
             Loaded += (_, _) => Keyboard.Focus(this);
         }
         else
         {
+            if (kind == WidgetKind.Neon)
+            {
+                neonClick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(Forms.SystemInformation.DoubleClickTime) };
+                neonClick.Tick += async (_, _) =>
+                {
+                    neonClick.Stop();
+                    if (app.Scene.Neon.ClickToPlay) await app.Media.ToggleAsync();
+                };
+            }
             grid.PreviewMouseLeftButtonDown += BeginDrag;
             grid.PreviewMouseMove += MoveDrag;
             grid.PreviewMouseLeftButtonUp += EndDrag;
@@ -77,7 +92,12 @@ internal sealed class DesktopWidget : Window
             lastPlacement = "";
             Dispatcher.InvokeAsync(() => { if (IsVisible) Apply(); });
         };
-        Closed += (_, _) => view.Release();
+        Closed += (_, _) =>
+        {
+            neonClick?.Stop();
+            fullNeon?.Release();
+            view.Release();
+        };
     }
 
     static FrameworkElementFactory ResizeGripVisual()
@@ -99,20 +119,23 @@ internal sealed class DesktopWidget : Window
         if (fullscreen)
         {
             DesktopInterop.SetScreenBounds(this, bounds);
+            view.Apply();
+            fullNeon?.Apply();
             return;
         }
         var options = app.Scene.Widget(kind);
         var fixedSize = IsWallpaperSize(kind);
-        var layout = $"{options.Placement}/{options.Locked}/{options.Left}/{options.Top}/{options.RelativeLeft}/{options.RelativeTop}/{options.Width}/{options.Height}";
+        var clickThrough = fixedSize || options.Locked && !(kind == WidgetKind.Neon && app.Scene.Neon.ClickToPlay);
+        var layout = $"{options.Placement}/{clickThrough}/{options.Left}/{options.Top}/{options.RelativeLeft}/{options.RelativeTop}/{options.Width}/{options.Height}";
         var needsPlacement = layout != lastPlacement;
         var wasAttached = desktopAttached;
         if (needsPlacement || options.Placement == Placement.Desktop && !DesktopInterop.IsDesktopAttached(this))
         {
-            desktopAttached = DesktopInterop.SetPlacement(this, options.Placement, options.Locked || fixedSize);
+            desktopAttached = DesktopInterop.SetPlacement(this, options.Placement, clickThrough);
             lastPlacement = layout;
             if (options.Placement == Placement.Desktop && !desktopAttached)
             {
-                DesktopInterop.SetPlacement(this, Placement.Floating, options.Locked || fixedSize);
+                DesktopInterop.SetPlacement(this, Placement.Floating, clickThrough);
                 if (needsPlacement || wasAttached) app.SetStatus("Windows desktop attachment is unavailable. Widget opened in a floating window.");
             }
             if (fixedSize) DesktopInterop.SetScreenBounds(this, bounds);
@@ -141,7 +164,16 @@ internal sealed class DesktopWidget : Window
 
     void BeginDrag(object sender, MouseButtonEventArgs args)
     {
-        if (app.Scene.Widget(kind).Locked || IsWallpaperSize(kind) || IsInteractive(args.OriginalSource as DependencyObject)) return;
+        if (IsWallpaperSize(kind) || IsInteractive(args.OriginalSource as DependencyObject)) return;
+        if (app.Scene.Widget(kind).Locked && !(kind == WidgetKind.Neon && app.Scene.Neon.ClickToPlay)) return;
+        if (kind == WidgetKind.Neon && args.ClickCount == 2)
+        {
+            neonClick?.Stop();
+            app.ShowNeonSettings();
+            args.Handled = true;
+            return;
+        }
+        dragged = false;
         dragStart = new Point(Forms.Cursor.Position.X, Forms.Cursor.Position.Y);
         var corner = PointToScreen(new Point());
         var end = PointToScreen(new Point(ActualWidth, ActualHeight));
@@ -163,6 +195,12 @@ internal sealed class DesktopWidget : Window
     {
         if (dragStart is not { } start || args.LeftButton != MouseButtonState.Pressed) return;
         var mouse = Forms.Cursor.Position;
+        if (kind == WidgetKind.Neon)
+        {
+            dragged |= Math.Abs(mouse.X - start.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+                Math.Abs(mouse.Y - start.Y) >= SystemParameters.MinimumVerticalDragDistance;
+            if (!dragged || app.Scene.Widget(kind).Locked) return;
+        }
         var moved = dragBounds with { X = (int)(dragBounds.X + mouse.X - start.X), Y = (int)(dragBounds.Y + mouse.Y - start.Y) };
         DesktopInterop.SetScreenBounds(this, moved);
     }
@@ -173,6 +211,15 @@ internal sealed class DesktopWidget : Window
         dragStart = null;
         ReleaseMouseCapture();
         if (Mouse.Captured == sender) Mouse.Capture(null);
+        if (kind == WidgetKind.Neon)
+        {
+            if (!dragged && app.Scene.Neon.ClickToPlay)
+            {
+                neonClick?.Stop();
+                neonClick?.Start();
+            }
+            if (!dragged || app.Scene.Widget(kind).Locked) return;
+        }
         var position = PointToScreen(new Point());
         var transform = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
         var options = app.Scene.Widget(kind);
@@ -202,6 +249,7 @@ internal sealed class DesktopWidget : Window
     {
         if (!IsVisible) return;
         view.Render(frame, kind is WidgetKind.CursorTrail or WidgetKind.Flock or WidgetKind.Fluid ? DesktopInterop.Pointer(this) : new(double.NaN, double.NaN));
+        fullNeon?.Render(frame);
     }
 
     public void RenderLyrics()

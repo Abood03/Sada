@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$checks = @('Recording', 'WordTiming', 'SongSync', 'SceneEditor', 'LyricsStudio', 'GraphemeRendering')
+$checks = @('Recording', 'WordTiming', 'SongSync', 'SceneEditor', 'LyricsStudio', 'GraphemeRendering', 'YouTubeTrack',
+    'YouTubeBridge', 'VisualizerMotion', 'NeonRendering', 'FullNeon')
 foreach ($check in $checks) {
     $project = Join-Path $PSScriptRoot "$check/$check.csproj"
     Write-Host "Running $check"

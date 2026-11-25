@@ -11,7 +11,7 @@
     <AssemblyName>Sada</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Sada.ico</ApplicationIcon>
-    <Version>1.2.0</Version>
+    <Version>1.4.1</Version>
     <EnableLyricsStudio Condition="'$(EnableLyricsStudio)' == ''">true</EnableLyricsStudio>
     <DefineConstants Condition="'$(EnableLyricsStudio)' == 'true'">$(DefineConstants);SADA_LYRICS_STUDIO</DefineConstants>
   </PropertyGroup>

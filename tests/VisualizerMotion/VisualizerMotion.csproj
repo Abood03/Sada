@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Visualizer.cs" Link="Visualizer.cs" />
+    <Compile Include="../../AlbumPalette.cs" Link="AlbumPalette.cs" />
+    <Compile Include="../../AudioEngine.cs" Link="AudioEngine.cs" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+</Project>

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using Forms = System.Windows.Forms;
@@ -181,7 +182,7 @@ internal sealed class Dashboard : Window
         nav.Children.Clear();
         foreach (var item in new[] { ("Scenes", "◈"), ("Visualizer", "∿"), ("Desktop widgets", "⊞"), ("Media & lyrics", "♫"), ("Profiles", "▤"), ("Audio & system", "◌") })
         {
-            var tab = Button($"{item.Item2}   {item.Item1}", () => { page = item.Item1; ReloadPage(); }, page == item.Item1);
+            var tab = Button($"{item.Item2}   {item.Item1}", () => Navigate(item.Item1), page == item.Item1);
             tab.HorizontalContentAlignment = HorizontalAlignment.Left;
             tab.Margin = new Thickness(0, 0, 0, 9);
             nav.Children.Add(tab);
@@ -201,12 +202,39 @@ internal sealed class Dashboard : Window
         UpdateScene();
     }
 
+    void Navigate(string destination)
+    {
+        if (page == destination) return;
+        page = destination;
+        ReloadPage();
+        AnimatePage();
+    }
+
+    void AnimatePage()
+    {
+        if (!SystemParameters.ClientAreaAnimation || canvas.Content is not StackPanel sheet) return;
+        var offset = new TranslateTransform();
+        sheet.RenderTransform = offset;
+        var duration = TimeSpan.FromMilliseconds(165);
+        var easing = new CubicEase { EasingMode = EasingMode.EaseOut };
+        sheet.BeginAnimation(OpacityProperty, new DoubleAnimation(.48, 1, duration) { EasingFunction = easing, FillBehavior = FillBehavior.Stop });
+        offset.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(9, 0, duration) { EasingFunction = easing, FillBehavior = FillBehavior.Stop });
+    }
+
+    internal void ShowNeonSettings()
+    {
+        selectedWidget = WidgetKind.Neon;
+        page = "Desktop widgets";
+        ReloadPage();
+        AnimatePage();
+    }
+
     StackPanel BuildScenes()
     {
         var heading = Heading(Scene.Name, "Arrange what appears on your Windows desktop.");
         var page = Stack(heading);
         var toolbar = Wrap(Button("Edit on desktop  ↗", () => app.OpenSceneEditor(), true),
-            Button("Widget settings", () => { this.page = "Desktop widgets"; ReloadPage(); }));
+            Button("Widget settings", () => Navigate("Desktop widgets")));
         toolbar.Margin = new Thickness(0, 0, 0, 11);
         page.Children.Add(toolbar);
 
@@ -289,12 +317,15 @@ internal sealed class Dashboard : Window
         var selector = Choice("Choose a widget", Enum.GetValues<WidgetKind>(), selectedWidget, value =>
         {
             selectedWidget = value;
-            Dispatcher.BeginInvoke(ReloadPage);
+            Dispatcher.BeginInvoke(() => { ReloadPage(); AnimatePage(); });
         }, WidgetName);
         selector.Margin = new Thickness(0, 0, 0, 12);
         page.Children.Add(selector);
         var current = Scene.Widget(selectedWidget);
-        var detail = Stack(Check("Show " + WidgetName(selectedWidget), current.Enabled, value => { current.Enabled = value; app.ApplyChanges(); }));
+        var label = selectedWidget == WidgetKind.Neon ? "Show neon on the desktop" : "Show " + WidgetName(selectedWidget);
+        var detail = Stack(Check(label, current.Enabled, value => { current.Enabled = value; app.ApplyChanges(); }));
+        if (selectedWidget == WidgetKind.Neon)
+            detail.Children.Add(Check("Show neon in full screen", Scene.FullNeon, value => { Scene.FullNeon = value; app.ApplyChanges(); }));
         detail.Children.Add(Choice("Placement", Enum.GetValues<Placement>(), current.Placement, value => { current.Placement = value; app.ApplyChanges(); },
             x => x switch { Placement.Desktop => "On the desktop", Placement.Floating => "Normal window", _ => "Always on top" }));
         detail.Children.Add(Range("Widget opacity", .08, 1, current.Opacity, value => { current.Opacity = value; app.ApplyChanges(); }));
@@ -332,6 +363,9 @@ internal sealed class Dashboard : Window
             case WidgetKind.Media:
                 detail.Children.Add(Choice("Card layout", Enum.GetValues<CardLayout>(), Scene.MediaLayout, v => { Scene.MediaLayout = v; app.ApplyChanges(); }));
                 break;
+            case WidgetKind.Neon:
+                detail.Children.Add(NeonControls());
+                break;
             case WidgetKind.Environment:
                 detail.Children.Add(Choice("Environment", new[] { "Dusk", "Tides", "Skyline" }, new[] { "Dusk", "Tides", "Skyline" }[Math.Clamp(Scene.EnvironmentStyle, 0, 2)], value =>
                 {
@@ -359,7 +393,7 @@ internal sealed class Dashboard : Window
         var controls = Card(detail);
         controls.Margin = new Thickness(0, 0, 11, 0);
         pair.Children.Add(controls);
-        widgetPreview = new WidgetView(app, selectedWidget, false) { Height = 248, ClipToBounds = true };
+        widgetPreview = new WidgetView(app, selectedWidget, false) { Height = 248, ClipToBounds = true, PreviewNeon = selectedWidget == WidgetKind.Neon };
         var render = Card(Stack(Label("WIDGET PREVIEW"), widgetPreview), Night, 11);
         render.VerticalAlignment = VerticalAlignment.Top;
         Grid.SetColumn(render, 1);
@@ -378,6 +412,42 @@ internal sealed class Dashboard : Window
         }
         page.Children.Add(Section("All widgets", grid));
         return page;
+    }
+
+    UIElement NeonControls()
+    {
+        var options = Scene.Neon;
+        var inks = Stack(ColorInput("Title color", options.TitleColor, value => options.TitleColor = value),
+            ColorInput("Artist color", options.ArtistColor, value => options.ArtistColor = value));
+        inks.Visibility = options.Colors == NeonColors.Custom ? Visibility.Visible : Visibility.Collapsed;
+        return Stack(
+            Choice("Lettering", Enum.GetValues<NeonLettering>(), options.Lettering, value => { options.Lettering = value; app.ApplyChanges(); }),
+            Choice("Colors", Enum.GetValues<NeonColors>(), options.Colors, value =>
+            {
+                options.Colors = value;
+                inks.Visibility = value == NeonColors.Custom ? Visibility.Visible : Visibility.Collapsed;
+                app.ApplyChanges();
+            }, value => value == NeonColors.Album ? "Album cover" : Friendly(value.ToString())),
+            inks,
+            Choice("Music response", Enum.GetValues<NeonReaction>(), options.Reaction, value => { options.Reaction = value; app.ApplyChanges(); },
+                value => value == NeonReaction.Surge ? "Power surge" : Friendly(value.ToString())),
+            Range("Response strength", 0, 2, options.ReactionStrength, value => { options.ReactionStrength = value; app.QueueSave(); }),
+            Choice("Tube flicker", Enum.GetValues<NeonFlicker>(), options.Flicker, value => { options.Flicker = value; app.QueueSave(); }),
+            Choice("After playback stops", Enum.GetValues<NeonIdle>(), options.Idle, value => { options.Idle = value; app.ApplyChanges(); },
+                value => value switch { NeonIdle.ShowTube => "Show unlit tubes", NeonIdle.Fade => "Fade unlit tubes", _ => "Hide sign" }),
+            Check("Acrylic backing", options.Acrylic, value => { options.Acrylic = value; app.ApplyChanges(); }),
+            Check("Show artist", options.ShowArtist, value => { options.ShowArtist = value; app.ApplyChanges(); }),
+            Check("Show music note", options.ShowNote, value => { options.ShowNote = value; app.ApplyChanges(); }),
+            Check("Click desktop sign to play or pause", options.ClickToPlay, value => { options.ClickToPlay = value; app.ApplyChanges(); }));
+
+        UIElement ColorInput(string label, string current, Action<string> save) => Entry(label, current, value =>
+        {
+            var color = value.Trim();
+            if (color.Length != 7 || color[0] != '#' || !color.Skip(1).All(Uri.IsHexDigit))
+            { app.SetStatus("Enter a color in #RRGGBB format."); return; }
+            save(color);
+            app.ApplyChanges();
+        }, "Apply");
     }
 
     UIElement SizeEditor(WidgetOptions options)
@@ -428,6 +498,10 @@ internal sealed class Dashboard : Window
     StackPanel BuildMedia()
     {
         var page = Stack(Heading("Media & lyrics", "Follow the Windows media session on the desktop or in full screen."));
+        page.Children.Add(Section("Playback source", Stack(
+            Choice("Follow", Enum.GetValues<MediaSourcePreference>(), app.Prefs.PlaybackSource, app.ChangePlaybackSource, source => source.ToString()),
+            Wrap(Button("Match YouTube song…", app.OpenYouTubeMatch), Button("Register browser bridge", app.RegisterYouTubeBridge)),
+            Text("Automatic prefers Spotify. Choose YouTube to try your browser’s Windows media session or use the optional Chrome/Edge add-on.", 12, Soft))));
 #if SADA_LYRICS_STUDIO
         page.Children.Add(Section("Lyrics Studio", Stack(Button("Edit this recording  ↗", app.OpenLyricsStudio, true),
             Text("Set line and word timing against the song as it plays.", 12, Soft))));
@@ -715,7 +789,7 @@ internal sealed class Dashboard : Window
         WidgetKind.Mood => "Album colors",
         WidgetKind.Flock => "Murmuration",
         WidgetKind.Disc => "Disc player",
-        WidgetKind.Neon => "Neon track title",
+        WidgetKind.Neon => "Neon sign",
         _ => Friendly(kind.ToString())
     };
 

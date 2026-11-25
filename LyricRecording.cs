@@ -12,7 +12,7 @@ internal readonly record struct LyricRecordingKey(string Value)
         if (!song.HasTrack || song.Duration <= TimeSpan.Zero)
             return null;
 
-        var identity = JsonSerializer.Serialize(new[]
+        var identity = song.YouTubeVideoId is { } videoId ? "youtube:" + videoId : JsonSerializer.Serialize(new[]
         {
             Normalize(song.Source), Normalize(song.Artist), Normalize(song.Title), Normalize(song.Album),
             Math.Round(song.Duration.TotalMilliseconds).ToString(CultureInfo.InvariantCulture)

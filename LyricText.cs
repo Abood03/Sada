@@ -8,10 +8,13 @@ namespace Sada;
 
 internal sealed class LyricText
 {
-    readonly record struct TimedWord(Run Run, int TextStart, int[] LetterEnds, TimeSpan At, TimeSpan? End);
+    readonly record struct TimedWord(Run Run, int TextStart, int[] LetterEnds, TimeSpan At, TimeSpan? End,
+        TextEffectTarget[]?[] PrefixEffects, TextEffectTarget[]?[] FadeEffects);
 
     readonly TextBlock block;
     readonly Brush foreground;
+    readonly SolidColorBrush fadeBrush = new();
+    readonly Color foregroundColor;
     readonly List<TimedWord> words = [];
     LyricsTrack? source;
     int line = -1;
@@ -22,11 +25,14 @@ internal sealed class LyricText
     int displayedWord = -1;
     int highlightedLetters;
     TextEffectTarget[] activeEffects = [];
+    TextEffectTarget[] fadeEffects = [];
+    int fadedLetter = -1;
 
     public LyricText(TextBlock block)
     {
         this.block = block;
         foreground = block.Foreground;
+        foregroundColor = (foreground as SolidColorBrush)?.Color ?? Colors.White;
         block.TextTrimming = TextTrimming.None;
     }
 
@@ -61,7 +67,8 @@ internal sealed class LyricText
             var letters = StringInfo.ParseCombiningCharacters(text[wordStart..wordEnd]);
             for (var i = 0; i < letters.Length; i++)
                 letters[i] = i + 1 < letters.Length ? letters[i + 1] : wordEnd - wordStart;
-            words.Add(new TimedWord(part, wordStart - end, letters, word.At, word.End));
+            words.Add(new TimedWord(part, wordStart - end, letters, word.At, word.End,
+                new TextEffectTarget[letters.Length][], new TextEffectTarget[letters.Length][]));
             end = nextEnd;
             block.Inlines.Add(part);
         }
@@ -86,9 +93,7 @@ internal sealed class LyricText
     public void HighlightAt(TimeSpan position, bool currentLine = true)
     {
         if (words.Count == 0) return;
-        var active = -1;
-        if (currentLine)
-            for (var i = 0; i < words.Count && words[i].At <= position; i++) active = i;
+        var active = currentLine ? WordAt(position) : -1;
 
         if (active < 0)
         {
@@ -105,21 +110,66 @@ internal sealed class LyricText
             return;
         }
         var elapsed = Math.Clamp((position - word.At).TotalMilliseconds / Math.Max(1, (end - word.At).TotalMilliseconds), 0, 1);
-        int count = Math.Min(word.LetterEnds.Length, 1 + (int)(elapsed * word.LetterEnds.Length));
-        if (active == displayedWord && count == highlightedLetters) return;
-        ClearHighlight();
-        displayedWord = active;
-        highlightedLetters = count;
+        var progression = elapsed * word.LetterEnds.Length;
+        int count = Math.Min(word.LetterEnds.Length, 1 + (int)progression);
+        if (active != displayedWord || count != highlightedLetters)
+        {
+            ClearHighlight();
+            displayedWord = active;
+            highlightedLetters = count;
+            activeEffects = word.PrefixEffects[count - 1] ??= ResolveRange(word, 0, word.LetterEnds[count - 1], StudioUi.Mint);
+            foreach (var effect in activeEffects) effect.Enable();
+        }
 
-        var start = word.Run.ContentStart.GetPositionAtOffset(word.TextStart);
-        var stop = word.Run.ContentStart.GetPositionAtOffset(word.TextStart + word.LetterEnds[count - 1]);
-        if (start is null || stop is null) return;
-        activeEffects = TextEffectResolver.Resolve(start, stop, new TextEffect { Foreground = StudioUi.Mint });
-        foreach (var effect in activeEffects) effect.Enable();
+        var fraction = progression - Math.Floor(progression);
+        if (count >= word.LetterEnds.Length || fraction < .18 || !SystemParameters.ClientAreaAnimation)
+        {
+            ClearFade();
+            return;
+        }
+        var mix = Math.Clamp((fraction - .18) / .82, 0, 1);
+        var tint = StudioUi.Mint.Color;
+        var color = Color.FromRgb(Blend(foregroundColor.R, tint.R, mix), Blend(foregroundColor.G, tint.G, mix), Blend(foregroundColor.B, tint.B, mix));
+        if (fadeBrush.Color != color) fadeBrush.Color = color;
+        if (fadedLetter == count) return;
+        ClearFade();
+        fadedLetter = count;
+        fadeEffects = word.FadeEffects[count] ??= ResolveRange(word, word.LetterEnds[count - 1], word.LetterEnds[count], fadeBrush);
+        foreach (var effect in fadeEffects) effect.Enable();
+    }
+
+    int WordAt(TimeSpan position)
+    {
+        int low = 0, high = words.Count;
+        while (low < high)
+        {
+            int mid = low + (high - low) / 2;
+            if (words[mid].At <= position) low = mid + 1;
+            else high = mid;
+        }
+        return low - 1;
+    }
+
+    static TextEffectTarget[] ResolveRange(TimedWord word, int from, int to, Brush color)
+    {
+        var start = word.Run.ContentStart.GetPositionAtOffset(word.TextStart + from);
+        var stop = word.Run.ContentStart.GetPositionAtOffset(word.TextStart + to);
+        return start is not null && stop is not null
+            ? TextEffectResolver.Resolve(start, stop, new TextEffect { Foreground = color }) : [];
+    }
+
+    static byte Blend(byte from, byte to, double mix) => (byte)Math.Round(from + (to - from) * mix);
+
+    void ClearFade()
+    {
+        foreach (var effect in fadeEffects) effect.Disable();
+        fadeEffects = [];
+        fadedLetter = -1;
     }
 
     void ClearHighlight()
     {
+        ClearFade();
         foreach (var effect in activeEffects) effect.Disable();
         activeEffects = [];
         displayedWord = -1;

@@ -21,7 +21,12 @@ internal sealed class WidgetView : Grid
     private static readonly Brush Line = Studio.Brush("#663D6280");
     private static readonly Brush Faded = Studio.Brush("#C6B7C8E2");
     private static readonly Brush Darken = Studio.Brush("#C50B1325");
+    private static readonly Brush NeonPanel = Studio.Brush("#41142234");
+    private static readonly Brush NeonPanelEdge = Studio.Brush("#6280C5DA");
+    private static readonly MediaSnapshot NeonSample = new("After the Rain", "Sada Preview", "", null,
+        TimeSpan.Zero, TimeSpan.Zero, true, "Preview");
     private static readonly string[] Weekdays = ["M", "T", "W", "T", "F", "S", "S"];
+    private static readonly int PaletteCount = Enum.GetValues<VisualPalette>().Length;
 
     private readonly App app;
     private readonly WidgetKind kind;
@@ -39,6 +44,9 @@ internal sealed class WidgetView : Grid
     private Image? wallpaperImage;
     private MediaElement? wallpaperVideo;
     private MediaCard? media;
+    private NeonSign? neon;
+    private Border? neonMount;
+    private (Color? Title, Color? Artist) neonColors;
     private ClockPanel? clock;
     private LyricsPanel? lyrics;
     private StackPanel? dataPanel;
@@ -65,7 +73,7 @@ internal sealed class WidgetView : Grid
     public void Apply()
     {
         var scene = app.Scene;
-        string key = $"{fullscreen}/{kind}/{scene.FullBackdrop}/{scene.FullMedia}/{scene.FullClock}/{scene.FullLyrics}/" +
+        string key = !fullscreen && kind == WidgetKind.Neon ? "Neon" : $"{fullscreen}/{kind}/{scene.FullBackdrop}/{scene.FullMedia}/{scene.FullClock}/{scene.FullLyrics}/" +
             $"{scene.TrackOnVisualizer}/{scene.AlbumGlow}/{scene.MediaLayout}/{scene.Clock}/{scene.LyricsStyle}";
         if (key != layoutId)
         {
@@ -99,11 +107,18 @@ internal sealed class WidgetView : Grid
             glow.Strength = scene.GlowStrength;
             glow.Style = scene.GlowStyle;
         }
+        if (neonMount is not null)
+        {
+            neonMount.Background = scene.Neon.Acrylic ? NeonPanel : Brushes.Transparent;
+            neonMount.BorderBrush = scene.Neon.Acrylic ? NeonPanelEdge : Brushes.Transparent;
+            neonColors = ResolveNeonColors(scene.Neon, style, artColors);
+        }
         clock?.Apply(scene, style);
         lastText = long.MinValue;
     }
 
     public void Release() => ReleaseWallpaper();
+    internal bool PreviewNeon { get; set; }
 
     public void ToggleVisual()
     {
@@ -113,7 +128,7 @@ internal sealed class WidgetView : Grid
 
     public void TogglePalette()
     {
-        paletteOverride = ((paletteOverride ?? (int)app.Scene.Visual.Palette) + 1) % (Enum.GetValues<VisualPalette>().Length + 1);
+        paletteOverride = ((paletteOverride ?? (int)app.Scene.Visual.Palette) + 1) % (PaletteCount + 1);
         Apply();
     }
 
@@ -130,6 +145,15 @@ internal sealed class WidgetView : Grid
         }
         if (fullCover is not null)
             coverScale.ScaleX = coverScale.ScaleY = 1 + Math.Clamp(frame.Beat, 0, 1) * .055;
+        if (neon is not null)
+        {
+            var track = app.Media.Current;
+            if (NeedsCoverPalette(app.Scene) && !ReferenceEquals(sampledArtwork, track.Artwork)) Apply();
+            neon.Render(PreviewNeon && !track.HasTrack ? NeonSample : track, frame, app.Scene.Neon, neonColors.Title, neonColors.Artist);
+            var opacity = neon.IdleOpacity;
+            if (neonMount is not null && neonMount.Opacity != opacity) neonMount.Opacity = opacity;
+            return;
+        }
         long now = timer.ElapsedMilliseconds;
         if (lastText != long.MinValue && now - lastText < 135)
             return;
@@ -177,6 +201,8 @@ internal sealed class WidgetView : Grid
         fullCover = null;
         backdrop = null;
         media = null;
+        neon = null;
+        neonMount = null;
         clock = null;
         lyrics = null;
         dataPanel = null;
@@ -205,9 +231,13 @@ internal sealed class WidgetView : Grid
             case WidgetKind.Media:
             case WidgetKind.Cassette:
             case WidgetKind.Disc:
-            case WidgetKind.Neon:
                 media = new MediaCard(app, kind, app.Scene.MediaLayout, false);
                 Children.Add(media);
+                break;
+            case WidgetKind.Neon:
+                neon = new NeonSign();
+                neonMount = new Border { Child = neon, CornerRadius = new CornerRadius(13), BorderThickness = new Thickness(1) };
+                Children.Add(neonMount);
                 break;
             case WidgetKind.Span:
                 visual = new Visualizer();
@@ -475,8 +505,8 @@ internal sealed class WidgetView : Grid
         }
     }
 
-    private bool NeedsCoverPalette(SceneOptions scene) =>
-        scene.MoodColor || kind == WidgetKind.Mood || paletteOverride == Enum.GetValues<VisualPalette>().Length;
+    private bool NeedsCoverPalette(SceneOptions scene) => scene.MoodColor || kind == WidgetKind.Mood ||
+        kind == WidgetKind.Neon && scene.Neon.Colors == NeonColors.Album || paletteOverride == PaletteCount;
 
     private void UpdatePalette(byte[]? artwork)
     {
@@ -486,7 +516,30 @@ internal sealed class WidgetView : Grid
     }
 
     private AlbumPalette? SelectedCoverPalette(SceneOptions scene) =>
-        (scene.MoodColor && paletteOverride is null || paletteOverride == Enum.GetValues<VisualPalette>().Length) ? coverPalette : null;
+        (scene.MoodColor && paletteOverride is null || paletteOverride == PaletteCount) ? coverPalette : null;
+
+    private (Color?, Color?) ResolveNeonColors(NeonOptions options, VisualSettings style, AlbumPalette? artwork) => options.Colors switch
+    {
+        NeonColors.WarmWhite => (Color.FromRgb(255, 218, 164), Color.FromRgb(250, 239, 219)),
+        NeonColors.Album when coverPalette is { } cover => (cover.First, cover.Middle),
+        NeonColors.Visualizer when artwork is { } art => (art.First, art.Last),
+        NeonColors.Visualizer => VisualizerColors(style),
+        NeonColors.Custom => (NeonColor(options.TitleColor), NeonColor(options.ArtistColor)),
+        _ => (null, null)
+    };
+
+    private static (Color?, Color?) VisualizerColors(VisualSettings settings)
+    {
+        var (first, _, last) = Visualizer.ResolvePalette(settings);
+        return (first, last);
+    }
+
+    private static Color? NeonColor(string value)
+    {
+        var text = value.AsSpan().Trim();
+        return text.Length == 7 && text[0] == '#' && uint.TryParse(text[1..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hex)
+            ? Color.FromRgb((byte)(hex >> 16), (byte)(hex >> 8), (byte)hex) : null;
+    }
 
     private VisualSettings ResolveStyle(SceneOptions scene, AlbumPalette? artwork)
     {
@@ -647,7 +700,7 @@ internal sealed class WidgetView : Grid
             Margin = new Thickness(8);
             bool centered = kind == WidgetKind.Media && layout is CardLayout.Centered or CardLayout.Cover;
             bool useArt = kind != WidgetKind.Media || layout != CardLayout.TextOnly;
-            bool decorative = kind is WidgetKind.Cassette or WidgetKind.Disc or WidgetKind.Neon;
+            bool decorative = kind is WidgetKind.Cassette or WidgetKind.Disc;
             var deck = new StackPanel { Width = centered && !compact ? 235 : 264 };
             var shell = new Border
             {
@@ -655,16 +708,13 @@ internal sealed class WidgetView : Grid
                 Padding = new Thickness(compact ? 7 : 10),
                 BorderThickness = new Thickness(1),
                 Background = kind == WidgetKind.Cassette ? Deeper : Glass,
-                BorderBrush = kind == WidgetKind.Neon ? Studio.Violet : Line,
+                BorderBrush = Line,
                 Child = deck
             };
-            if (kind == WidgetKind.Neon)
-                shell.Effect = new DropShadowEffect { Color = Studio.Violet.Color, BlurRadius = 20, ShadowDepth = 0, Opacity = .65 };
-
             var contents = new Grid();
             var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            string header = kind switch { WidgetKind.Disc => "DISC PLAYER", WidgetKind.Cassette => "SIDE A", WidgetKind.Neon => "ON AIR", _ => "NOW PLAYING" };
-            var tag = Studio.Text(header, 9, kind == WidgetKind.Neon ? Studio.Violet : Studio.Mint, true);
+            string header = kind switch { WidgetKind.Disc => "DISC PLAYER", WidgetKind.Cassette => "SIDE A", _ => "NOW PLAYING" };
+            var tag = Studio.Text(header, 9, Studio.Mint, true);
             title = OneLine("Waiting for playback", compact ? 14 : 17, Studio.Paper, true);
             artist = OneLine("", 12, Studio.Soft);
             info.Children.Add(tag);

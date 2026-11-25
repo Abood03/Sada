@@ -65,6 +65,11 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (YouTubeBridge.IsHostLaunch(e.Args))
+        {
+            _ = RunYouTubeHostAsync();
+            return;
+        }
         singleInstance = new Mutex(true, @"Local\Sada.Personal.Desktop", out ownsMutex);
         showRequested = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Sada.Personal.Show");
         if (!ownsMutex)
@@ -74,6 +79,7 @@ public partial class App : Application
             return;
         }
         Prefs = Preferences.Load();
+        SetUpYouTubePlayback();
         Data = new DesktopData(Preferences.Folder);
         if (!File.Exists(Path.Combine(Preferences.Folder, "settings.json")))
             Scene.Widget(WidgetKind.Visualizer).Enabled = true;
@@ -165,6 +171,12 @@ public partial class App : Application
         dashboard.Show();
         if (dashboard.WindowState == WindowState.Minimized) dashboard.WindowState = WindowState.Normal;
         dashboard.Activate();
+    }
+
+    internal void ShowNeonSettings()
+    {
+        ShowDashboard();
+        if (dashboard.IsVisible) dashboard.ShowNeonSettings();
     }
 
     internal void RestartAudio()
@@ -386,8 +398,12 @@ public partial class App : Application
     internal Task FetchLyricsAsync()
     {
         var track = Media.Current;
-        if (!track.HasTrack || string.IsNullOrWhiteSpace(track.Artist))
-        { SetLyricsMessage("Play a track in Spotify first"); return Task.CompletedTask; }
+        if (!track.HasTrack)
+        { SetLyricsMessage("Play a song first"); return Task.CompletedTask; }
+        if (IsYouTubePlayback(track) && ResolveYouTubeSong(track) is null)
+        { SetLyricsMessage("Choose Match YouTube song to enter its title and artist"); return Task.CompletedTask; }
+        if (!IsYouTubePlayback(track) && string.IsNullOrWhiteSpace(track.Artist))
+        { SetLyricsMessage("Waiting for the artist name"); return Task.CompletedTask; }
         var key = LyricsRequestKey(track);
         if (lyricsRequest is not null && key == observedLyricsTrack) return Task.CompletedTask;
         CancelLyricsLookup();
@@ -477,9 +493,18 @@ public partial class App : Application
         if (ManualLyricsApply(id) && !ReferenceEquals(Lyrics, manualLyrics) && lyricsRequest is null)
         { SetLyrics(id, manualLyrics!, "Local file"); return; }
         if (lyricsRequest is not null || (Lyrics is not null && id == lyricIdentity)) return;
-        if (!track.HasTrack) { SetLyricsMessage("Waiting for playback"); return; }
+        if (!track.HasTrack)
+        {
+            SetLyricsMessage(Media.SourcePreference == MediaSourcePreference.YouTube ? "Play a YouTube video in the browser" : "Waiting for playback");
+            return;
+        }
         if (!Scene.AutoLyrics) { SetLyricsMessage("Automatic lyrics are off"); return; }
-        if (string.IsNullOrWhiteSpace(track.Artist)) { SetLyricsMessage("Waiting for track information"); return; }
+        if (IsYouTubePlayback(track))
+        {
+            if (track.Duration <= TimeSpan.Zero) { SetLyricsMessage("YouTube timeline unavailable · try the browser add-on"); return; }
+            if (ResolveYouTubeSong(track) is null) { SetLyricsMessage("YouTube song unknown · choose Match YouTube song"); return; }
+        }
+        else if (string.IsNullOrWhiteSpace(track.Artist)) { SetLyricsMessage("Waiting for track information"); return; }
         if (lyricsCache.TryGetValue(lookupKey, out var cached)) { SetLyrics(id, cached, "LRCLIB"); return; }
         if (DateTimeOffset.UtcNow >= retryLyricsAfter) _ = LookupLyricsAsync(track, manualSearch: false);
     }
@@ -565,7 +590,7 @@ public partial class App : Application
 #if SADA_LYRICS_STUDIO
         if (IsEditedTiming) return;
 #endif
-        if (!Prefs.AdaptiveLyricsTiming || Prefs.Microphone || Lyrics is not { Lines.Count: > 0 } lyrics ||
+        if (!Prefs.AdaptiveLyricsTiming || Prefs.Microphone || IsYouTubePlayback(song) || Lyrics is not { Lines.Count: > 0 } lyrics ||
             key.Length == 0 || key != lyricIdentity || Prefs.SongLyricOffsets.ContainsKey(key))
         {
             if (analyzingSong.Length > 0)
@@ -621,13 +646,17 @@ public partial class App : Application
         SetLyricsMessage("Finding lyrics…");
         try
         {
-            var lyrics = await Media.FetchLyricsAsync(track, request.Token);
+            var youtubeSong = IsYouTubePlayback(track) ? ResolveYouTubeSong(track) : null;
+            var query = youtubeSong is { } song
+                ? track with { Title = song.Title, Artist = song.Artist, Album = song.Album } : track;
+            var lyrics = await Media.FetchLyricsAsync(query, request.Token, strictDuration: youtubeSong is not null,
+                allowDurationMismatch: youtubeSong?.ManuallyMatched == true);
             var key = LyricsRequestKey(track);
             if (request.IsCancellationRequested || quitting || key != LyricsRequestKey(Media.Current)) return;
             if (lyrics is null)
             {
                 retryLyricsAfter = DateTimeOffset.UtcNow.AddMinutes(15);
-                SetLyricsMessage("No lyrics found for this track");
+                SetLyricsMessage(youtubeSong is not null ? "No matching lyrics · check the video version or choose Match YouTube song" : "No lyrics found for this track");
                 return;
             }
             if (manualSearch && ManualLyricsApply(track.LyricsKey))
@@ -639,7 +668,7 @@ public partial class App : Application
             }
             if (lyricsCache.Count >= 40) lyricsCache.Remove(lyricsCache.Keys.First());
             lyricsCache[key] = lyrics;
-            SetLyrics(track.LyricsKey, lyrics, "LRCLIB");
+            SetLyrics(track.LyricsKey, lyrics, youtubeSong is not null ? "YouTube · LRCLIB" : "LRCLIB");
         }
         catch (OperationCanceledException) when (request.IsCancellationRequested) { }
         catch (LyricsRetryException ex) when (!request.IsCancellationRequested)
@@ -665,6 +694,7 @@ public partial class App : Application
         refreshingMedia = true;
         try
         {
+            RefreshYouTubePlayback();
             await Media.RefreshAsync();
             if (!quitting) SyncLyrics(Media.Current);
         }
@@ -840,6 +870,7 @@ public partial class App : Application
         trayMenu?.Dispose();
         Audio.Dispose();
         Media.Dispose();
+        youtubeBridge?.Dispose();
         base.OnExit(e);
     }
 }

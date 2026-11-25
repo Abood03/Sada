@@ -461,7 +461,9 @@ internal sealed class LyricsStudio : Window
         else
         {
             if (following && !timeline.IsMouseCaptureWithin) SetTimeline(playback.Position);
-            playerStatus.Text = playback.CanSeek
+            playerStatus.Text = playback.YouTubeVideoId is not null
+                ? "Use YouTube to play, pause, or seek. This preview follows the video."
+                : playback.CanSeek
                 ? (following ? "Following the live playhead" : "Previewing a time on the timeline")
                 : "This player cannot seek. You can still mark lines and words during playback.";
             if (replayRange is { } range) CheckReplay(playback, range);
@@ -502,7 +504,7 @@ internal sealed class LyricsStudio : Window
         bool hasWord = words.SelectedIndex >= 0;
         var buttonLabel = playback?.IsPlaying == true ? "Pause" : "Play";
         if (!Equals(playPause.Content, buttonLabel)) playPause.Content = buttonLabel;
-        playPause.IsEnabled = sameTrack;
+        playPause.IsEnabled = sameTrack && playback?.YouTubeVideoId is null;
         mark.IsEnabled = sameTrack && hasLine;
         seekHere.IsEnabled = sameTrack && playback?.CanSeek == true;
         replay.IsEnabled = seekHere.IsEnabled && hasLine;

@@ -14,6 +14,62 @@ internal static class Program
         TestWord("WAVES", "mellow", false);
         TestWord("سَلام", "هادي", true);
         TestWord("ábc", "down", false);
+        TestLyricFlow();
+    }
+
+    static void TestLyricFlow()
+    {
+        var song = LyricsTrack.Parse("[00:00.10]First\n[00:01.00]Second\n[00:02.00]Third\n[00:03.00]السَّطر الرابع\n[00:04.00]Fifth\n[00:06.00]Sixth");
+        var type = typeof(App).Assembly.GetType("Sada.LyricFlow")!;
+        var flow = (Grid)Activator.CreateInstance(type)!;
+        var render = type.GetMethod("Render", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.DeclaredOnly)!;
+        flow.Measure(new Size(320, 142));
+        flow.Arrange(new Rect(0, 0, 320, 142));
+
+        Update(song, 1950, 1950);
+        Assert(Lines().Count() == 3 && Offset(Line("Second")) == 0, "steady layout shows previous, current and next rows");
+        double priorNextOffset = Offset(Line("Third"));
+
+        Update(song, 2001, 2001);
+        if (SystemParameters.ClientAreaAnimation)
+        {
+            Assert(Math.Abs(Offset(Line("Third")) - priorNextOffset) < .001, "the incoming current line starts at its previous position");
+            Assert(Line("First").Opacity > 0 && Line("السَّطر الرابع").Opacity == 0, "the recycled edge rows do not pop in or out");
+            Update(song, 2105, 2105);
+            Assert(Offset(Line("Third")) > 0 && Offset(Line("Third")) < priorNextOffset, "the current line rises between adjacent frames");
+            Assert(Line("First").Opacity < .72 && Line("السَّطر الرابع").Opacity > 0, "outgoing and incoming edge rows crossfade");
+        }
+        else Assert(Offset(Line("Third")) == 0 && Lines().Count() == 3, "reduced motion settles immediately");
+
+        Update(song, 2110, 2290);
+        Assert(Lines().Count() == 3 && Offset(Line("Third")) == 0, "settles at exactly three rows even when playback pauses");
+        var effects = Line("Third").Inlines.OfType<Run>().SelectMany(run => run.TextEffects).ToArray();
+        Update(song, 2110, 2390);
+        Assert(Offset(Line("Third")) == 0 && Line("Third").Inlines.OfType<Run>().SelectMany(run => run.TextEffects).SequenceEqual(effects),
+            "a steady paused playhead keeps its letter prefix");
+
+        Update(song, 4100, 2406);
+        Assert(Offset(Line("Fifth")) == 0 && Lines().Count() == 3, "forward seek snaps to the correct row");
+        Update(song, 3010, 2422);
+        Assert(Offset(Line("السَّطر الرابع")) == 0 && Line("السَّطر الرابع").FlowDirection == FlowDirection.RightToLeft,
+            "backward seek snaps to the complete right-to-left row");
+
+        var rapid = LyricsTrack.Parse("[00:01.00]One\n[00:01.04]Two\n[00:01.08]Three\n[00:01.12]Four\n[00:06.00]Five");
+        Update(rapid, 1025, 3000);
+        Update(rapid, 1042, 3017);
+        Update(rapid, 1084, 3059);
+        Update(rapid, 1125, 3100);
+        Update(rapid, 1125, 3400);
+        Assert(Lines().Count() == 3 && Offset(Line("Four")) == 0 && Line("Three").Opacity > 0 && Line("Five").Opacity > 0,
+            "rapid line transitions recycle stable neighboring text");
+        Console.WriteLine("PASS lyric flow rise, edge fades, pause, seeks and rapid line changes.");
+
+        void Update(LyricsTrack track, int position, int clock) =>
+            render.Invoke(flow, [track, TimeSpan.FromMilliseconds(position), (long)clock, "", 21d]);
+        IEnumerable<TextBlock> Lines() => flow.Children.OfType<TextBlock>().Where(row => row.Visibility == Visibility.Visible);
+        TextBlock Line(string text) => Lines().Single(row => string.Concat(row.Inlines.OfType<Run>().Select(run => run.Text)) == text);
+        static double Offset(TextBlock row) => ((TranslateTransform)((TransformGroup)row.RenderTransform).Children[1]).Y;
     }
 
     static void TestWord(string first, string second, bool rtl)
@@ -38,14 +94,24 @@ internal static class Program
         Assert(normal.MintPixels == 0, "no highlight prior to the word");
         var opening = Render(1001);
         Assert(runs[0].TextEffects.Single().PositionCount == clusterStarts[1], "first whole Unicode letter");
+        var firstEffect = runs[0].TextEffects.Single();
         Assert(runs[1].TextEffects.Count == 0, "upcoming word stays normal");
         Assert(opening.MintPixels > 0 && opening.MintPixels < opening.TextPixels, "one letter actually rendered in mint");
+        if (SystemParameters.ClientAreaAnimation)
+        {
+            Render(1000 + 600 / clusterStarts.Length);
+            var fade = runs[0].TextEffects.Single(effect => !ReferenceEquals(effect, firstEffect));
+            Assert(fade.PositionCount == clusterStarts[2] - clusterStarts[1] &&
+                ((SolidColorBrush)fade.Foreground).Color != ((SolidColorBrush)firstEffect.Foreground).Color,
+                "incoming grapheme blends independently without breaking its shaped letter");
+        }
         var ending = Render(2170);
         Assert(ending.MintPixels > opening.MintPixels, "more letters actually render in mint as time advances");
         Assert(runs[0].TextEffects.Single().PositionCount == first.Length, "full word colored near the end");
         Assert(Render(2410).MintPixels == 0, "explicit gap clears highlight");
         Assert(Render(2715).MintPixels > 0 && runs[0].TextEffects.Count == 0 && runs[1].TextEffects.Count == 1, "next word starts independently");
         Assert(Render(1010).MintPixels == opening.MintPixels, "backward seek redraws initial letter step");
+        Assert(ReferenceEquals(firstEffect, runs[0].TextEffects.Single()), "backward seek reuses the shaped letter prefix");
         Assert(Render(1500, false).MintPixels == 0, "neighboring lyric stays unhighlighted");
         Assert(block.FlowDirection == (rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight), "script direction is preserved");
         Assert(string.Concat(runs.Select(run => run.Text)) == first + " " + second && block.TextTrimming == TextTrimming.None,
