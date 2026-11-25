@@ -1,57 +1,49 @@
-# سجل إصدارات صدى
+# Changelog
 
-تبدأ النسخة الأولى من الكود على GitHub بالإصدار **1.2.0**. يصف هذا السجل الإصدارات التي جُرّبت على ويندوز منذ **1.0.0**.
+[Home](README.md) · [Roadmap](docs/roadmap.md) · [GitHub releases](https://github.com/Abood03/Sada/releases)
 
-## 1.4.1 — ألوان غلاف الأغنية وانطفاء النيون
+Sada first appeared on GitHub as **1.2.0**. This history also covers the earlier Windows builds and the changes that shipped together in **1.4.1**.
 
-- تستخدم لوحة النيون تلقائيًا اللون الغالب من الغلاف للعنوان ولونًا مساندًا للفنان. يبقى لون الأغنية السابقة عليها إلى أن ينطفئ عنوانها.
-- تنطفئ الهالة عند الإيقاف وتظل ملامح الأنابيب الزجاجية ظاهرة. عند استئناف التشغيل يضيء العنوان بالتدريج. يبدأ الخفوت أو الإخفاء بعد ست ثوانٍ عند اختيار أحدهما.
+## 1.4.1 — Album-colored neon and unlit glass
 
-## 1.4.0 — النيون وحركة العرض
+- **Neon sign** can use the cover's dominant color for the title and a complementary color from the cover for the artist. The previous title retains its own palette during the transition.
+- Pausing switches off the light and leaves the glass tubing visible. The title relights progressively on resume. The fade and hide options take effect after a six-second idle period.
 
-- صارت لوحة **Neon sign** ترسم عنوان الأغنية والفنان كأنابيب ضوئية. تخفت الأغنية السابقة ويظهر العنوان الجديد حرفًا حرفًا. يمكن تغيير الخط والألوان والتفاعل مع الصوت والخفوت، وتشغيلها على الديسكتوب أو سحبها لموقع مستقل في ملء الشاشة.
-- تتحرك السطور في **Flow** إلى مواضعها تدريجيًا مع دخول وخروج أطرافها، ويمتزج لون الحرف القادم داخل الكلمة حسب وقت تشغيلها. يبقى موضع التلوين ثابتًا عند الإيقاف ويعاد حسابه عند القفز.
-- تبديل نمط المؤثر واتجاهه ولوحته والخلفية الجوية يمزج الرسم السابق بالجديد، مع انتقال خفيف بين صفحات التحكم. تتبع التأثيرات إعداد تقليل الحركة في ويندوز. [دليل النيون والحركة](docs/neon-and-motion.md)
+## 1.4.0 — Neon Sign and smoother transitions
 
-## 1.3.0 — كلمات أغاني YouTube
+- Added **Neon sign** on the desktop and in full screen, with independent full-screen placement, adjustable lettering and color, beat response, and idle behavior.
+- **Flow** lyrics transition between lines and highlight words progressively by character. Highlights hold on pause and follow the new position after a seek.
+- Visualizer modes, palette and direction changes, and atmosphere changes blend between frames. Motion follows applicable Windows animation settings.
 
-- أضيف اختيار مصدر التشغيل **Automatic / Spotify / YouTube**. الوضع التلقائي يعطي الأولوية لـ Spotify عندما يكون شغّالًا.
-- يستطيع صدى استخدام جلسة وسائط المتصفح لمطابقة عنوان الأغنية والفنان ومدة التشغيل مع LRCLIB. يمكن تحديد العنوان والفنان يدويًا عند عدم وجود مطابقة واضحة.
-- أضيفت إضافة اختيارية لـ Chrome وEdge ترسل معرّف الفيديو ووقت التشغيل محليًا. يسمح المعرّف باستعادة التوقيت لنفس الفيديو عند إعادة فتحه، ويُستعمل محرّر الكلمات الحالي لضبط مقدمة الكليب أو تصحيح فرق التوقيت. [دليل التشغيل](docs/youtube.md)
+See [Neon Sign and motion](docs/neon-and-motion.md).
 
-## 1.2.0 — استوديو توقيت الكلمات
+## 1.3.0 — YouTube lyrics
 
-### الجديد
+- Added **Automatic**, **Spotify**, and **YouTube** playback sources. Automatic mode prioritizes active Spotify playback.
+- Sada can read a browser's Windows media session and look up time-synced lyrics. You can enter the title and artist manually if a video needs a better match.
+- The optional Chrome and Edge extension sends video identity and playback time over a local bridge. That lets Lyrics Studio keep corrections associated with a particular YouTube video.
 
-- أضيف **Lyrics Studio** إلى صفحة **Media & lyrics**. يعرض خطًا زمنيًا ومعاينة بثلاثة أسطر وتلوين تدريجي للحروف بالعربية والإنجليزية، مع بيان مصدر التوقيت أو كونه تقديريًا أو معدّلًا.
-- يضبط المحرّر بداية السطر عند لحظة السماع وبداية كل كلمة ونهايتها. ويمكن تقديم التسجيل كاملًا أو تأخيره بخطوات **0.10 ثانية**، والقفز إلى مقطع وإعادة سماعه إذا أتاح المشغّل القفز.
-- تُحفَظ التعديلات محليًا للتسجيل المحدد وتُطبّق عند تشغيله مجددًا. يزيل **Restore source timing** التعديل المحفوظ. وتبقى المسودة المفتوحة مرتبطة بتسجيلها حتى لو انتقل المشغّل إلى تسجيل آخر.
+See [YouTube lyrics setup](docs/youtube.md).
 
-### التحسينات والإصلاحات مقارنةً بالإصدار 1.0.0
+## 1.2.0 — Lyrics Studio and timing improvements
 
-- تحسّن توزيع التلوين عند توفر توقيت السطر فقط. يخفّف التقدير من امتداد التلوين عبر السكتات الطويلة في الأغاني البطيئة، ويحافظ على المدّ المحدد بتوقيت صريح من المصدر.
-- تعتمد ذاكرة الكلمات وتعديلات المحرّر على هوية التسجيل بحسب بيانات المشغّل ومدّته. يتحقق محرّر التوقيت من التسجيل عند إرسال أمر تشغيل أو قفز، لتجنّب تنفيذ الأمر على أغنية انتقل إليها المشغّل أثناء التحرير.
+- Added a timeline and a three-line playback preview with progressive highlighting for Arabic and English. Labels identify source, estimated, and edited timing.
+- Added tap-to-mark line timing, editable word start and end times, and whole-recording adjustments in 0.10-second steps. Players that support seeking allow you to replay a section.
+- Timing edits are stored locally per recording. **Restore source timing** removes the local correction. An open draft stays attached to its original recording when the player changes tracks.
+- Estimated highlighting handles slow songs and long instrumental gaps more consistently when only line timestamps are available. Explicit word times remain intact.
+- Recording identity includes available metadata and duration. Playback commands from Lyrics Studio check the recording before controlling the player.
 
-اختُبر التلوين والتعديل والحفظ والاستعادة على أمثلة عربية وإنجليزية. اختُبر الإيقاف والقفز بمشغّل محاكى، وتبقى المطابقة السمعية للتسجيلات البطيئة المعنية بحاجة إلى اختبار مباشر على Spotify.
+Arabic and English rendering, persistence, and restoration were tested. Playback seeking used a simulated player. See [Testing](docs/testing.md) for the verification scope.
 
-## 1.1.0 — استوديو المشاهد
+## 1.1.0 — Desktop Scene Studio
 
-### الجديد
+- Added a scene-first dashboard and an editor that opens from the dashboard or the system tray. Drag, resize, align, lock, and preview desktop widgets before saving.
+- Added **Album**, **Karaoke**, and **Focus** presets, plus named scenes and switching from the tray.
+- Saved layouts use display-relative positions and can fall back to the primary display when the original monitor becomes unavailable. Existing 1.0.0 settings can be opened.
 
-- أصبحت **Scenes** صفحة البداية. تعرض المشهد الحالي ومعاينته، وتفتح **Edit desktop scene** من اللوحة أو أيقونة صدى قرب الساعة.
-- يمكن سحب الودجت وتغيير حجمها وشفافيتها وقفلها مباشرة على الديسكتوب. يسمح المحرّر بالمعاينة والحفظ باسم أو الإلغاء، ويعرض خطوط محاذاة للحواف والعناصر.
-- أضيفت قوالب **Album** و**Karaoke** و**Focus**. يجمع قالب **Album** الغلاف والكلمات أثناء السحب. ويمكن اختيار المشاهد المحفوظة من أيقونة صدى.
+## 1.0.0 — First Windows build
 
-### التحسينات
-
-- تُحفظ مواضع العناصر نسبةً إلى مساحة الشاشة. تعود المواضع والمقاسات بعد إعادة التشغيل، وينتقل المشهد إلى الشاشة الأساسية إذا تعذّر العثور على الشاشة المحفوظة.
-- يفتح الإصدار إعدادات **1.0.0**. جُرّب الإلغاء والحفظ على شاشتين، واختُبر الرجوع للشاشة الأساسية باستخدام معرّف شاشة غير موجود.
-
-## 1.0.0 — الإصدار الأول
-
-### المزايا الأساسية
-
-- صدى تطبيق ويندوز يعرض مؤثرات صوتية وكلمات كودجت شفافة على الديسكتوب، مع لوحة تحكم وأيقونة قرب الساعة ووضع ملء الشاشة.
-- يلتقط صوت ويندوز ويعرض أنماطًا تستجيب له. يتعرّف على الأغنية والغلاف من جلسة وسائط ويندوز، ومنها Spotify، ويعرض الغلاف في وسط المؤثر الدائري مع خيار ألوان الألبوم.
-- يجلب الكلمات من LRCLIB ويقرأ ملفات محلية مثل LRC وLyricsfile بصيغة YAML والنص العادي. يقدّر توقيت الكلمات عند توفر توقيت السطور فقط، ويعرض الكلمات بتلوين تدريجي، ويدعم تصحيحًا تلقائيًا عند توافر إشارات صوتية كافية وتعديلًا يدويًا لكل أغنية.
-- تضمن الإصدار 14 نمطًا للمؤثر البصري و23 نوعًا من الودجت، منها الساعة والتقويم والطقس ومعلومات الجهاز، مع حفظ الإعدادات محليًا.
+- Transparent desktop widgets, a visualizer, a dashboard, a tray icon, and full-screen playback.
+- Windows audio capture and media-session detection, including Spotify. The circular visualizer can display the cover and pick up its palette.
+- Automatic lyrics lookup from LRCLIB, local lyric files, estimated word timing where only line timing is available, and automatic or manual timing adjustments.
+- Fourteen visualizer modes and 23 widget types, including clock, calendar, weather, and system information.

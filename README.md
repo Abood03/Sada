@@ -1,42 +1,70 @@
-# صدى · Sada
+<div align="center">
+  <img src="docs/assets/sada-icon.png" width="88" height="88" alt="">
+  <h1>Sada</h1>
+  <p><strong>Audio-reactive desktop scenes and synced lyrics for Windows.</strong></p>
+  <p>Build a desktop scene around your music with album artwork, lyrics, and transparent widgets.</p>
+  <p>
+    <a href="https://github.com/Abood03/Sada/releases/latest"><strong>Download for Windows x64</strong></a>
+    · <a href="docs/quick-start.md">Quick start</a>
+    · <a href="docs/features.md">Feature explorer</a>
+    · <a href="docs/architecture.md">System map</a>
+    · <a href="docs/roadmap.md">Roadmap</a>
+  </p>
+</div>
 
-تطبيق ويندوز شخصي يعرض مؤثّرًا بصريًا يتفاعل مع الصوت، وغلاف الألبوم، وكلمات الأغنية المتزامنة كعناصر شفافة على سطح المكتب. يقرأ الأغنية ووقت التشغيل من جلسات الوسائط في ويندوز، ويعطي الأولوية لـ Spotify عندما يكون شغّالًا.
+## Get started
 
-## التشغيل
+1. Download the Windows x64 ZIP from [Latest release](https://github.com/Abood03/Sada/releases/latest), extract it, and run `Sada.exe`. The portable package includes the .NET runtime.
+2. Play a song in Spotify or open a music video on YouTube. Sada reads playback through Windows. For YouTube, select it under **Media & lyrics → Playback source**.
+3. Select **Edit desktop scene** to try **Album**, **Karaoke**, or **Focus**. Drag and resize the widgets, then use **Save** to apply the scene.
 
-نزّل الحزمة المحمولة **Windows x64** من صفحة الإصدارات، فكّ الضغط وشغّل `Sada.exe`. الحزمة تتضمن ‎.NET Runtime، والتشغيل اختُبر على Windows 11. [إصدارات GitHub](https://github.com/Abood03/Sada/releases/latest)
+## Explore the features
 
-- من أيقونة صدى بجانب الساعة، اختر **Edit desktop scene** لترتيب العناصر. القوالب الجاهزة هي **Album** و**Karaoke** و**Focus**. استخدم **Save** للتطبيق، أو **Save as** لحفظ مشهد باسمه، أو **Cancel** لإلغاء المعاينة.
-- شغّل أغنية في Spotify. عندما تظهر كلماتها، افتح **Media & lyrics → Edit this recording**. في **Lyrics Studio** اضبط بداية السطر عند سماعه، أو توقيت بداية ونهاية الكلمة، أو توقيت التسجيل كاملًا بخطوات 0.10 ثانية. عند دعم القفز من المشغّل، تقدر تعيد سماع مقطع للتحقق من التوقيت.
-- يمكن جلب الكلمات تلقائيًا عبر **LRCLIB** أو فتح ملفات محلية، منها LRC وEnhanced LRC وLyricsfile/YAML. يظهر في محرّر الكلمات إذا كان توقيت الكلمة من المصدر أو تقديريًا أو معدّلًا. يحتفظ صدى بالتعديلات محليًا لكل تسجيل.
-- لعرض كلمات YouTube، اختر **YouTube** من **Playback source**. يمكن استخدام الإضافة المرفقة لقراءة توقيت الفيديو مباشرة من Chrome أو Edge.
-- من **Desktop widgets** اختر **Neon sign** لعرض عنوان الأغنية والفنان بألوان الغلاف على سطح المكتب أو في وضع ملء الشاشة.
+<details open>
+<summary><strong>Desktop scenes and the visualizer</strong></summary>
 
-## البناء من المصدر
+Arrange transparent widgets on your desktop, place album artwork in the center of Ring or Halo, and match the visualizer palette to the cover. Save layouts for different displays and switch between them from the system tray.
 
-ثبّت **.NET 10 SDK**، وافتح PowerShell في مجلد المستودع.
+[Desktop scenes](docs/features.md#desktop-scenes) · [Visualizer controls](docs/features.md#visualizer) · [Every widget](docs/features.md#widget-catalog)
 
-```powershell
-dotnet build .\Sada.csproj -c Release
-dotnet run --project .\Sada.csproj -c Release
-```
+</details>
 
-يمكن إضافة `-- --tray` لبدء التشغيل بجانب الساعة. استخدم الأمر التالي لبناء الملف المحمول.
+<details>
+<summary><strong>Spotify, YouTube, and synchronized lyrics</strong></summary>
 
-```powershell
-dotnet publish .\Sada.csproj -c Release -r win-x64 --self-contained true `
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false `
-  -o .\artifacts\win-x64
-```
+Sada follows the active Windows media session and can fetch lyrics by track metadata. Follow the current line with surrounding lines in view. The optional Chrome and Edge extension supplies playback time and video identity for YouTube watch pages.
 
-يظهر `Sada.exe` داخل `artifacts/win-x64`. عند توزيع الحزمة، أرفق مجلد `Third-party` وملفات إضافة YouTube من مجلد `browser`. [توثيق ‎.NET للنشر كملف واحد](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview)
+[Playback sources](docs/features.md#playback-sources) · [Lyrics display](docs/features.md#synchronized-lyrics) · [Set up YouTube](docs/youtube.md)
 
-## أدلة المشروع
+</details>
 
-- [تاريخ الإصدارات](CHANGELOG.md)
-- [البنية والتقنيات والبيانات المحلية](docs/architecture.md)
-- [عرض كلمات YouTube في صدى](docs/youtube.md)
-- [لوحة النيون وانتقالات العرض](docs/neon-and-motion.md)
-- [تشغيل الاختبارات ونتائج التحقق](docs/testing.md)
-- [المكتبات وتراخيص الأطراف الثالثة](THIRD-PARTY-NOTICES.md)
+<details>
+<summary><strong>Lyrics Studio and per-recording timing</strong></summary>
+
+Tap a line as you hear it, adjust individual word boundaries, or shift an entire recording in 0.10-second steps. Preview the timing and save it for that exact recording.
+
+[Edit and restore timing](docs/features.md#lyrics-studio)
+
+</details>
+
+<details>
+<summary><strong>Neon Sign and full screen</strong></summary>
+
+Show the current track as illuminated tubing. The title follows the album artwork, the glow cuts out when playback pauses, and the tubes relight progressively when playback resumes.
+
+[Neon controls](docs/neon-and-motion.md) · [Full-screen controls](docs/features.md#full-screen)
+
+</details>
+
+## Documentation
+
+| I want to… | Start here |
+| --- | --- |
+| Install Sada, see lyrics, or make my first scene | [Quick start](docs/quick-start.md) |
+| Find a control or browse all desktop widgets | [Feature explorer](docs/features.md) |
+| See how playback, audio, lyrics, and widgets connect | [System map](docs/architecture.md) |
+| Build Sada from source or run the checks | [Build and package](docs/build.md) · [Testing](docs/testing.md) |
+| See what shipped and what could come next | [Changelog](CHANGELOG.md) · [Roadmap](docs/roadmap.md) |
+| Understand local data and bundled dependencies | [Local data and network requests](docs/architecture.md#local-data-and-network-requests) · [Third-party notices](THIRD-PARTY-NOTICES.md) |
+
+The portable build has been tested on Windows 11. Settings, listening history, and timing edits are stored under `%LOCALAPPDATA%\Sada`.

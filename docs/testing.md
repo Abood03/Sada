@@ -1,42 +1,63 @@
-# اختبار صدى
+# Testing Sada
 
-من جذر المستودع، شغّل الاختبارات على ويندوز مع ‎.NET 10 SDK وبيئة سطح مكتب تدعم WPF.
+[Sada](../README.md) / [Feature explorer](features.md)
+
+## Run the automated checks
+
+Open PowerShell at the repository root on a Windows desktop with the .NET 10 SDK. The rendering tests require WPF. Build restore requires NuGet access or cached packages.
 
 ```powershell
 .\tests\Run-Checks.ps1
+node --test .\browser\tests\extension.test.cjs
 ```
 
-لتشغيل مجموعة واحدة، استخدم مثلًا:
+Node.js is required for the second command. To run one .NET suite, specify its project directly.
 
 ```powershell
 dotnet run --project .\tests\LyricsStudio\LyricsStudio.csproj -c Release
 ```
 
-تطبع المجموعات نتائج `PASS` وتتوقف عند أول فشل. تُجرى اختبارات العرض في نوافذ WPF معزولة، وتستخدم اختبارات الكلمات عينات اصطناعية. تحتاج استعادة تبعيات البناء إلى الوصول إلى NuGet أو إلى حزم محفوظة محليًا.
+The PowerShell runner prints `PASS` results and stops on the first failure. Rendering tests use isolated WPF windows, and timing tests use simulated playback or synthetic audio cues.
 
-| المجموعة | ما تتحقق منه |
+| Suite | Coverage |
 | --- | --- |
-| `Recording` | هوية التسجيل وحدود توقيت الكلمات وحفظ التعديلات أو استعادتها باستخدام مجلد اختبار مستقل. |
-| `WordTiming` | قراءة LRC المحسّن وLyricsfile من YAML، والانتقال لتوقيت تقديري عند الحاجة، وحالات السكتات الطويلة ومدّ الكلمات. |
-| `SongSync` | تصحيح التأخير والتقديم مع الإشارات الصوتية الاصطناعية، وبقاء توقيت المصدر عند غموض الإشارة. |
-| `SceneEditor` | محاذاة وتغيير حجم العناصر، والقوالب، ومواضع عناصر V1، ومعاينة المشهد وعزل مسودته عن الإعدادات المحفوظة. |
-| `LyricsStudio` | تعديل سطر وكلمة، والمعاينة والقفز والإعادة بمشغّل محاكى، وحفظ المسودة للتسجيل الذي بدأ عليه التعديل. |
-| `GraphemeRendering` | عدد البكسلات الملوّنة في الحروف العربية واللاتينية والمركّبة، وعودة التلوين إلى الموضع الصحيح بعد القفز للخلف. |
-| `YouTubeTrack` | تحليل عناوين عربي وإنجليزي، والتحقق من مصدر المتصفح، ورفض المطابقة التلقائية للنسخ البديلة الملتبسة. |
-| `YouTubeBridge` | الرسائل المحلية بين إضافة المتصفح وصدى، وفصل التبويبات والاتصالات، والتحقق من بيانات التشغيل. |
-| `VisualizerMotion` | مزج الرسم عند تبديل النمط والاتجاه واللوحة بسرعة، وحفظ صورة Waterfall الخارجة أثناء الانتقال. |
-| `NeonRendering` | ألوان الغلاف عند تغيّر الأغنية أو وصول الغلاف، وبقاء الأنابيب الزجاجية بعد زوال الضوء، وعودة الإضاءة تدريجيًا، وتفاعل النيون مع النبض بالعربي والإنجليزي. |
-| `FullNeon` | تشغيل النيون بشكل مستقل بملء الشاشة وحصر موضعه داخل حدود العرض وحفظه. |
+| `Recording` | Recording identity, word-timing bounds, and saving or restoring corrections in an isolated directory. |
+| `WordTiming` | Enhanced LRC, Lyricsfile/YAML, estimated timing, long breaks, and held notes. |
+| `SongSync` | Adaptive timing against synthetic audio cues and preserving source timing when the signal is ambiguous. |
+| `SceneEditor` | Alignment, resizing, templates, V1 positions, and keeping preview changes out of saved settings. |
+| `LyricsStudio` | Editing lines and words, preview and transport controls with simulated playback, and saving the original recording's draft. |
+| `GraphemeRendering` | Highlight progress on Arabic, Latin, and combining characters, plus repositioning after a backward seek. |
+| `YouTubeTrack` | Arabic and English titles, browser-source detection, and ambiguous alternate recordings. |
+| `YouTubeBridge` | Local message validation and tracking playback across independent tabs and connections. |
+| `VisualizerMotion` | Blending changes to modes, appearance, and direction, including preserving the outgoing Waterfall drawing. |
+| `NeonRendering` | Cover color changes, unlit glass after playback stops, gradual relighting, reactive glow, and Arabic and English text. |
+| `FullNeon` | Independent full-screen visibility and bounded placement that persists. |
+| Browser extension | Sender validation, timing, pause, seeking, buffering, rate, ad detection, and tab lifecycle with simulated browser state. |
 
-يمكن تشغيل فحوص إضافة المتصفح بالأمر `node --test .\browser\tests\extension.test.cjs`.
+## Check the portable build on Windows
 
-في فحص 1.3.0 على Edge وعبر جلسة ويندوز، طابق صدى فيديو **Someone Like You** تلقائيًا مع 44 سطرًا متزامنًا، وأظهر الاستوديو الموضع الجديد بعد القفز والفيديو متوقف. عند اختبار **Tamally Maak** بعنوان فيديو ثنائي اللغة، جلبت المطابقة اليدوية كلمات متزامنة مكتوبة بالأحرف اللاتينية من المصدر. اختُبر مسار الإضافة برسائل محلية واختبارات آلية، واختُبر اتصال مضيفها بملف `Sada.exe` المحمول مباشرةً.
+<details open>
+<summary>Desktop scenes and Neon Sign</summary>
 
-## فحص التشغيل على ويندوز
+1. Open **Edit desktop scene** from Sada's tray menu. Preview a template and move the cover and lyrics. Select **Cancel** and confirm that your arrangement returns.
+2. With a second display available, save a scene there and restart Sada to check the position. Then try the same scene with the display disconnected and check the primary-screen fallback.
+3. Enable **Neon sign** on the desktop and in full screen. Play tracks with distinct cover colors, pause, and resume. Look for a palette change, visible unlit glass, and relighting. Move the sign in full screen and verify that the desktop position is independent.
 
-1. افتح صدى ثم اختر **Edit desktop scene** من قائمة أيقونة صدى. عاين قالبًا وحرّك الغلاف والكلمات، ثم اختر **Cancel** وتأكد من رجوع ترتيبك السابق.
-2. عند توفر شاشة ثانية، انقل المعاينة إليها واحفظ مشهدًا اختباريًا. أعد تشغيل صدى وتحقق من المواضع، ثم جرّب الرجوع إلى الشاشة الأساسية إذا أصبحت الشاشة المحفوظة غير متاحة.
-3. أثناء تشغيل تسجيل تعرف توقيته، افتح **Media & lyrics → Edit this recording**. غيّر توقيت سطر أو كلمة ثم استخدم **Save timing**. أعد فتح صدى وتحقق من التعديل، وبعدها جرّب **Restore source timing**.
-4. جرّب تسجيلًا بطيئًا فيه سكتات واضحة، وراقب بداية السطر والتلوين داخل الكلمة. سجّل اسم التسجيل والموضع الذي تلاحظه. يعتمد اختبار القفز والإعادة الصوتية على إمكانات جلسة الوسائط التي يعلنها المشغّل لويندوز.
+</details>
 
-في فحص إصدار 1.2، جُرّب حفظ مشهد فعلي واستعادته على شاشتين، واختُبر الرجوع للشاشة الأساسية بمعرّف شاشة غير موجود. فحوص توقيت الأغاني البطيئة والقفز استخدمت عينات اصطناعية، وما زال التحقق السمعي في تسجيلات Spotify المعنية يحتاج تشغيلها الفعلي.
+<details>
+<summary>Synchronized lyrics and playback</summary>
+
+1. While a familiar recording plays, open **Media & lyrics → Edit this recording**. Adjust a line or word, select **Save timing**, and check it after restarting Sada. Then try **Restore source timing**.
+2. Try a slow recording with audible gaps. Compare the line onset and word highlight with the vocals, and note the recording and timestamp if they diverge.
+3. Try a YouTube watch page through the Windows media session and, if installed, the extension. Check changes after a pause, a seek, or a switch to a different upload.
+
+Seek and replay support depends on what the player exposes to Windows.
+
+</details>
+
+## Release verification notes
+
+- **1.4.1:** Windows rendering checks covered the album palette, unlit glass, and relighting. The desktop Neon Sign was visible after restarting the portable build. The rendering checks exercised the transition in isolation.
+- **1.3.0:** An Edge session supplied synchronized YouTube lyrics and reported a seek while paused. Manual matching was checked with a bilingual video title. The separate extension path was exercised with automated tab and message tests and a direct test of the portable executable as the native host.
+- **1.2.0:** A saved scene was restored on two monitors. Primary-screen fallback was checked with a missing display ID. Slow-track timing and seeking were tested with synthetic samples, so real recordings still benefit from a listening check.

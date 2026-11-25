@@ -1,21 +1,38 @@
-# لوحة النيون وانتقالات العرض
+# Neon Sign and motion
 
-## لوحة النيون
+[Sada](../README.md) / [Feature explorer](features.md)
 
-من **Desktop widgets** اختَر **Neon sign**. تقدر تشغّلها على الديسكتوب أو في ملء الشاشة بشكل مستقل. حرّكها في محرّر مشاهد الديسكتوب، أو اسحب اللوحة مباشرة في ملء الشاشة لحفظ موقع خاص به.
+## Set up Neon Sign
 
-يأخذ خيار **Album cover** اللون الغالب للعنوان ولونًا مساندًا للفنان، ويتحدّث عند وصول الغلاف أو تغيّر الأغنية. عند الإيقاف تختفي الهالة وتظل الأنابيب الزجاجية ظاهرة. يحدّد **After playback stops** إذا كانت الأنابيب تظل ظاهرة أو تخفت أو تختفي بعد ست ثوانٍ.
+1. Open **Desktop widgets** and choose **Neon sign**.
+2. Enable **Show neon on the desktop**, **Show neon in full screen**, or both.
+3. Position the desktop sign in the scene editor. Drag the sign in full-screen mode to save a separate position.
 
-تتضمن الإعدادات ثلاثة خطوط وألوانًا ثابتة أو من المؤثر، وخيارات خاصة للون العنوان والفنان. يمكن تعديل تفاعل اللوحة مع الصوت، وإخفاء اسم الفنان أو النغمة، واختيار الأنابيب وحدها أو خلفية أكريليك.
+Neon Sign displays the song title and artist in luminous letters. **Album cover** uses the dominant artwork color for the title and an accent color for the artist. The colors refresh as artwork becomes available or the track changes.
 
-## الكلمات وحركة الجرافيكس
+### Appearance controls
 
-يعرض **Flow** السطر السابق والحالي والتالي. عند تغيير السطر، تتحرك السطور إلى مواضعها ويتلاشى الطرف الخارج تدريجيًا. يكمل لون الكلمة تقدّمه على الحروف بحسب وقت التشغيل والتوقيت المتاح، مع الحفاظ على تشكيل العربي. عند تغيير نمط المؤثر يجمع صدى الرسم الخارج والرسم الجديد لفترة قصيرة.
+| Control | What it changes |
+| --- | --- |
+| **Lettering** | Choose Script, Block, or Tall Capitals. |
+| **Colors** | Use the album cover, Sada palette, Warm White, visualizer palette, or custom title and artist colors. |
+| **Music response** and **Response strength** | Choose Chase, Equalizer, Power surge, Flare, or Steady, then adjust the intensity. |
+| **Tube flicker** | Choose whether lit letters flicker. |
+| **Acrylic backing** | Add a panel behind the tubes. |
+| **Show artist** and **Show music note** | Show or hide the secondary elements. |
+| **Click desktop sign to play or pause** | Let a click on the desktop sign toggle playback when its window permits input. |
 
-## مرجع الدراسة والتحقق
+<details>
+<summary>What happens when playback stops?</summary>
 
-أُخذ سلوك النيون وإعداداته من معاينة نافذة Weyv أثناء التجربة. فحص REA الساكن شمل وحدات النيون وعرض الكلمات والمؤثرات من حزمة التطبيق ذات البصمة `d1051e9833918403c73db4b65c5cdd7c22cc9d4101d6eb0067a0805cc7fd71c4`. ظهر في الملفات مسار لتحريك عمود الكلمات ومسار مستقل لسحب اللون فوق الكلمة. رقم دليل الفحص `ev_e3ccf71b940d3f1e9f54ff742643711d42793353de730ea17d6928e4ac3c184f`. كان الفحص موجّهًا لهذه الوحدات. سجل REA اختلاف بصمة في مكتبة أصلية منفصلة أثناء جرد الحزمة.
+The glow disappears and the unlit glass tubes remain visible. Under **After playback stops**, choose **Show unlit tubes** to leave them visible. **Fade unlit tubes** and **Hide sign** take effect after six seconds. When playback resumes after the tubes have gone dark, the title lights up progressively with animations enabled.
 
-ركّز فحص 1.4.1 الساكن على فصل انطفاء ضوء الأنبوب عن خفوت الودجت بعد التوقف. دليل الفحص `ev_38c193a9698f3b713a1479f706a8f557c424506a4ee210376e71779067b2e9e0`.
+</details>
 
-تغطي الاختبارات رسم أنابيب النيون وظهور العنوان الجديد وخواص التفاعل مع الصوت، وموقع ملء الشاشة، واحتفاظ المؤثر بطبقتي الانتقال أثناء التبديل، وتشكيل العربي والإنجليزي وحركة السطور والإيقاف والقفز. [تشغيل الاختبارات](testing.md)
+## Lyrics and visualizer transitions
+
+**Flow** shows the previous, current, and next lyric lines. On a natural line change, the stack slides into place as the outgoing edge fades. The active word fills as playback advances through its timing range, while preserving Arabic shaping. A seek updates the highlight to the new playback position.
+
+The visualizer briefly blends the outgoing and incoming drawing when supported appearance settings change. The visualizer, Neon Sign, and natural lyric line transitions honor the Windows animation setting.
+
+[Automated coverage and manual checks](testing.md)
