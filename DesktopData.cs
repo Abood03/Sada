@@ -35,11 +35,12 @@ public sealed class DesktopData : IDisposable
     private readonly string historyPath;
     private readonly ListeningHistory history;
     private readonly string diskRoot = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.Windows)) ?? "";
-    private readonly GpuMeter gpuMeter = new();
+    private GpuMeter? gpuMeter;
     private Dictionary<string, (long Read, long Written)> networkTotals = new(StringComparer.Ordinal);
     private (ulong Total, ulong Idle)? lastCpuTimes;
     private (long Free, long Total) disk;
     private long lastSample;
+    private long lastSystemSample;
     private long lastDiskRefresh;
     private long lastHistorySave = Stopwatch.GetTimestamp();
     private string lastPlayingTrack = "";
@@ -71,7 +72,7 @@ public sealed class DesktopData : IDisposable
         }
     }
 
-    public void Sample(MediaSnapshot snapshot)
+    public void Sample(MediaSnapshot snapshot, bool readSystem = true)
     {
         if (disposed)
             return;
@@ -81,22 +82,37 @@ public sealed class DesktopData : IDisposable
         lastSample = timestamp;
 
         SampleListening(snapshot, Math.Clamp(elapsed, 0, 3));
-        if (lastDiskRefresh == 0 || Stopwatch.GetElapsedTime(lastDiskRefresh, timestamp).TotalSeconds >= 30)
+        if (readSystem)
+            SampleSystem(timestamp);
+        else if (lastSystemSample != 0)
         {
-            disk = ReadDisk(diskRoot);
-            lastDiskRefresh = timestamp;
+            lastSystemSample = 0;
+            lastCpuTimes = null;
+            networkTotals.Clear();
+            gpuMeter?.Dispose();
+            gpuMeter = null;
         }
-
-        (double? percent, long used, long total) = ReadMemory();
-        (double received, double sent) = ReadNetwork(elapsed);
-        System = new SystemReading(ReadCpu(), gpuMeter.Read(), percent, used, total, disk.Free, disk.Total,
-            diskRoot.TrimEnd(Path.DirectorySeparatorChar), received, sent);
 
         if (historyDirty && Stopwatch.GetElapsedTime(lastHistorySave, timestamp).TotalSeconds >= 30)
         {
             SaveHistory();
             lastHistorySave = timestamp;
         }
+    }
+
+    private void SampleSystem(long timestamp)
+    {
+        if (lastDiskRefresh == 0 || Stopwatch.GetElapsedTime(lastDiskRefresh, timestamp).TotalSeconds >= 30)
+        {
+            disk = ReadDisk(diskRoot);
+            lastDiskRefresh = timestamp;
+        }
+        double elapsed = lastSystemSample == 0 ? 0 : Stopwatch.GetElapsedTime(lastSystemSample, timestamp).TotalSeconds;
+        lastSystemSample = timestamp;
+        (double? percent, long used, long total) = ReadMemory();
+        (double received, double sent) = ReadNetwork(elapsed);
+        System = new SystemReading(ReadCpu(), (gpuMeter ??= new GpuMeter()).Read(), percent, used, total, disk.Free, disk.Total,
+            diskRoot.TrimEnd(Path.DirectorySeparatorChar), received, sent);
     }
 
     public async Task<WeatherReading?> SearchWeatherAsync(string city, CancellationToken cancellationToken = default)
@@ -142,7 +158,7 @@ public sealed class DesktopData : IDisposable
             return;
         disposed = true;
         SaveHistory();
-        gpuMeter.Dispose();
+        gpuMeter?.Dispose();
     }
 
     private void SampleListening(MediaSnapshot snapshot, double elapsed)

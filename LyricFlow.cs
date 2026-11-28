@@ -28,6 +28,8 @@ internal sealed class LyricFlow : Grid
     // can finish moving before its row is reused for future text.
     readonly Row[] rows = new Row[4];
     readonly TextBlock message;
+    readonly SolidColorBrush plainInk = new();
+    Color? coverColor;
     LyricsTrack? track;
     int line = int.MinValue;
     long lastFrame;
@@ -35,6 +37,7 @@ internal sealed class LyricFlow : Grid
     ScrollTransition transition;
     bool wasMoving;
     bool sizeChanged;
+    bool showsUntimedLyrics;
     string previousMessage = "";
     double previousSize;
 
@@ -65,6 +68,15 @@ internal sealed class LyricFlow : Grid
         Children.Add(message);
     }
 
+    internal void SetCoverColor(Color? color)
+    {
+        if (coverColor == color) return;
+        coverColor = color;
+        foreach (var row in rows) row.Content.SetCoverColor(color);
+        if (color is { } tint) plainInk.Color = LyricText.ReadableCoverColor(tint);
+        message.Foreground = showsUntimedLyrics && color.HasValue ? plainInk : StudioUi.Soft;
+    }
+
     internal void Render(LyricsTrack? lyrics, TimeSpan position, long now, string status, double textSize = 21)
     {
         textSize = Math.Clamp(textSize, 12, 34);
@@ -73,8 +85,10 @@ internal sealed class LyricFlow : Grid
             if (!ReferenceEquals(track, lyrics) || previousMessage != status || line != int.MinValue)
             {
                 var text = lyrics?.PlainText ?? "";
-                message.Text = text.Length == 0 ? status : string.Join(Environment.NewLine,
-                    text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(3));
+                showsUntimedLyrics = !string.IsNullOrWhiteSpace(text);
+                message.Text = showsUntimedLyrics ? string.Join(Environment.NewLine,
+                    text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(3)) : status;
+                message.Foreground = showsUntimedLyrics && coverColor.HasValue ? plainInk : StudioUi.Soft;
                 message.FlowDirection = DirectionFor(message.Text);
                 message.Visibility = Visibility.Visible;
                 foreach (var row in rows) row.Text.Visibility = Visibility.Collapsed;
@@ -109,6 +123,7 @@ internal sealed class LyricFlow : Grid
             else transition = new(next, next, 0, now, 0);
             track = lyrics;
             line = next;
+            showsUntimedLyrics = false;
             message.Visibility = Visibility.Collapsed;
         }
         else if (seek || wasMoving && !SystemParameters.ClientAreaAnimation)

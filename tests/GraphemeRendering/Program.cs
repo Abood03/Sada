@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -15,6 +17,8 @@ internal static class Program
         TestWord("سَلام", "هادي", true);
         TestWord("ábc", "down", false);
         TestLyricFlow();
+        TestCoverPalette();
+        TestWidgetArtwork();
     }
 
     static void TestLyricFlow()
@@ -137,6 +141,146 @@ internal static class Program
                 if (buffer[i + 1] - buffer[i + 2] > 22) mintPixels++;
             }
             return (textPixels, mintPixels);
+        }
+    }
+
+    static void TestCoverPalette()
+    {
+        var song = LyricsTrack.ParseLyricsFile("""
+            version: 1.0
+            lines:
+              - text: 'WAVES mellow'
+                start_ms: 1000
+                end_ms: 3400
+                words:
+                  - text: 'WAVES'
+                    start_ms: 1000
+                    end_ms: 2200
+                  - text: 'mellow'
+                    start_ms: 2700
+                    end_ms: 3400
+            """)!;
+        var type = typeof(App).Assembly.GetType("Sada.LyricFlow")!;
+        var flow = (Grid)Activator.CreateInstance(type)!;
+        const System.Reflection.BindingFlags members = System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly;
+        var render = type.GetMethod("Render", members)!;
+        var setCoverColor = type.GetMethod("SetCoverColor", members)!;
+        flow.Measure(new Size(320, 142));
+        flow.Arrange(new Rect(0, 0, 320, 142));
+
+        var original = Frame(1000);
+        Assert(original.Ink.G > original.Ink.R + 20 && Math.Abs(original.Base.R - original.Base.B) <= 20,
+            "the fallback palette uses neutral text and a mint highlight");
+
+        setCoverColor.Invoke(flow, [Colors.Red]);
+        var red = Frame(1016);
+        Assert(red.Base.R > red.Base.B + 12 && red.Ink.R > red.Ink.B + 12,
+            $"both the lyrics and the highlight reflect a red cover ({red.Base}, {red.Ink})");
+        Assert(red.Base != red.Ink, "word progress remains visible with a shared cover hue");
+
+        setCoverColor.Invoke(flow, [Colors.Blue]);
+        var blue = Frame(1032);
+        Assert(blue.Base.B > blue.Base.R + 12 && blue.Ink.B > blue.Ink.R + 12,
+            "late artwork recolors both states on the unchanged word and playhead");
+        Assert(blue.Base != blue.Ink, "the blue cover also keeps lyric progress legible");
+        Assert(blue.Fade is not { } fade || (fade.B > fade.R + 12 && fade != blue.Base && fade != blue.Ink),
+            "the partially colored letter blends between two shades of the current cover hue");
+        if (blue.Fade is { } halfway)
+        {
+            var later = Frame(1040, 1195);
+            Assert(later.Fade is { } bright && bright.R > halfway.R && bright.R < blue.Ink.R,
+                "the same letter continues to brighten between frames");
+        }
+
+        setCoverColor.Invoke(flow, [null]);
+        Assert(Frame(1048) == original, "missing cover art restores neutral text, mint and the original fade");
+        Console.WriteLine("PASS cover hues recolor the same lyric word, letter transition and fallback.");
+
+        (Color Base, Color Ink, Color? Fade) Frame(long clock, int position = 1120)
+        {
+            render.Invoke(flow, [song, TimeSpan.FromMilliseconds(position), clock, "", 21d]);
+            var line = flow.Children.OfType<TextBlock>().Single(row => row.Visibility == Visibility.Visible);
+            var runs = line.Inlines.OfType<Run>().ToArray();
+            Assert(string.Concat(runs.Select(run => run.Text)) == "WAVES mellow" && runs[1].TextEffects.Count == 0,
+                "palette changes preserve the complete line and untouched upcoming word");
+            var ink = runs[0].TextEffects.OrderBy(effect => effect.PositionStart).ToArray();
+            Assert(ink.Length == (SystemParameters.ClientAreaAnimation ? 2 : 1) && ink[0].PositionCount == 1,
+                "the same grapheme is highlighted while reapplying the palette");
+            return (((SolidColorBrush)runs[0].Foreground).Color, ((SolidColorBrush)ink[0].Foreground).Color,
+                ink.Length == 2 ? ((SolidColorBrush)ink[1].Foreground).Color : null);
+        }
+    }
+
+    static void TestWidgetArtwork()
+    {
+        const BindingFlags instance = BindingFlags.Instance | BindingFlags.NonPublic;
+        var scene = new SceneOptions { FullLyrics = true };
+        var app = new App();
+        typeof(App).GetProperty("Prefs", instance)!.SetValue(app, new Preferences { Scene = scene });
+        typeof(App).GetProperty("Lyrics", instance)!.SetValue(app, LyricsTrack.Parse("[00:01.00]Cover lyric\n[00:04.00]Next line"));
+        var media = (MediaService)typeof(App).GetProperty("Media", instance)!.GetValue(app)!;
+        var current = typeof(MediaService).GetField("current", instance)!;
+        var type = typeof(App).Assembly.GetType("Sada.WidgetView", throwOnError: true)!;
+        var render = type.GetMethod("RenderLyrics")!;
+        var song = new MediaSnapshot("Test track", "Sada", "", null, TimeSpan.FromSeconds(1.15),
+            TimeSpan.FromSeconds(10), false, "Test");
+        var red = Artwork(Colors.Red);
+        var blue = Artwork(Colors.Blue);
+
+        foreach (var style in Enum.GetValues<LyricsStyle>())
+        {
+            scene.LyricsStyle = style;
+            var widget = (FrameworkElement)Activator.CreateInstance(type, [app, WidgetKind.Lyrics, false])!;
+            CheckArtwork(widget, style.ToString());
+        }
+
+        scene.LyricsStyle = LyricsStyle.Flow;
+        var full = (FrameworkElement)Activator.CreateInstance(type, [app, WidgetKind.Visualizer, true])!;
+        CheckArtwork(full, "full screen");
+        Console.WriteLine("PASS Windows artwork reaches all six desktop lyric styles and the full-screen widget.");
+
+        void CheckArtwork(FrameworkElement widget, string name)
+        {
+            widget.Measure(new Size(560, 410));
+            widget.Arrange(new Rect(0, 0, 560, 410));
+            var initial = TextInk(null);
+            var late = TextInk(red);
+            var switched = TextInk(blue);
+            Assert(late.R > late.B + 20 && switched.B > switched.R + 20 && TextInk(null) == initial,
+                name + " applies late and changed covers and clears absent artwork");
+
+            Color TextInk(byte[]? cover)
+            {
+                current.SetValue(media, song with { Artwork = cover });
+                render.Invoke(widget, null);
+                widget.UpdateLayout();
+                var row = LyricLine(widget) ?? throw new InvalidOperationException(name + " renders the current lyric");
+                return ((SolidColorBrush)row.Foreground).Color;
+            }
+        }
+
+        static TextBlock? LyricLine(DependencyObject element)
+        {
+            if (element is TextBlock row && string.Concat(row.Inlines.OfType<Run>().Select(run => run.Text)) == "Cover lyric")
+                return row;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
+            {
+                if (LyricLine(VisualTreeHelper.GetChild(element, i)) is { } child) return child;
+            }
+            return null;
+        }
+
+        static byte[] Artwork(Color color)
+        {
+            uint pixel = 0xff000000u | (uint)color.R << 16 | (uint)color.G << 8 | color.B;
+            var bitmap = BitmapSource.Create(32, 32, 96, 96, PixelFormats.Bgra32, null,
+                Enumerable.Repeat(pixel, 32 * 32).ToArray(), 32 * 4);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var stream = new MemoryStream();
+            encoder.Save(stream);
+            return stream.ToArray();
         }
     }
 

@@ -47,6 +47,9 @@ internal sealed class WidgetView : Grid
     private NeonSign? neon;
     private Border? neonMount;
     private (Color? Title, Color? Artist) neonColors;
+    private GlitchBox? glitch;
+    private Color? glitchTint;
+    private long? glitchPausedAt;
     private ClockPanel? clock;
     private LyricsPanel? lyrics;
     private StackPanel? dataPanel;
@@ -73,7 +76,7 @@ internal sealed class WidgetView : Grid
     public void Apply()
     {
         var scene = app.Scene;
-        string key = !fullscreen && kind == WidgetKind.Neon ? "Neon" : $"{fullscreen}/{kind}/{scene.FullBackdrop}/{scene.FullMedia}/{scene.FullClock}/{scene.FullLyrics}/" +
+        string key = !fullscreen && (kind is WidgetKind.Neon or WidgetKind.GlitchBox) ? kind.ToString() : $"{fullscreen}/{kind}/{scene.FullBackdrop}/{scene.FullMedia}/{scene.FullClock}/{scene.FullLyrics}/" +
             $"{scene.TrackOnVisualizer}/{scene.AlbumGlow}/{scene.MediaLayout}/{scene.Clock}/{scene.LyricsStyle}";
         if (key != layoutId)
         {
@@ -113,12 +116,20 @@ internal sealed class WidgetView : Grid
             neonMount.BorderBrush = scene.Neon.Acrylic ? NeonPanelEdge : Brushes.Transparent;
             neonColors = ResolveNeonColors(scene.Neon, style, artColors);
         }
+        if (glitch is not null)
+            glitchTint = scene.Glitch.Colors switch
+            {
+                GlitchColors.Custom => ParseHexColor(scene.Glitch.Accent),
+                GlitchColors.Visualizer => VisualizerColors(style).Item1,
+                _ => coverPalette?.First
+            };
         clock?.Apply(scene, style);
         lastText = long.MinValue;
     }
 
     public void Release() => ReleaseWallpaper();
-    internal bool PreviewNeon { get; set; }
+    internal bool PreviewMediaWidget { get; set; }
+    internal bool IsMediaWidgetVisible => (neonMount?.Opacity ?? glitch?.Opacity ?? 1) > 0;
 
     public void ToggleVisual()
     {
@@ -149,9 +160,20 @@ internal sealed class WidgetView : Grid
         {
             var track = app.Media.Current;
             if (NeedsCoverPalette(app.Scene) && !ReferenceEquals(sampledArtwork, track.Artwork)) Apply();
-            neon.Render(PreviewNeon && !track.HasTrack ? NeonSample : track, frame, app.Scene.Neon, neonColors.Title, neonColors.Artist);
+            neon.Render(PreviewMediaWidget && !track.HasTrack ? NeonSample : track, frame, app.Scene.Neon, neonColors.Title, neonColors.Artist);
             var opacity = neon.IdleOpacity;
             if (neonMount is not null && neonMount.Opacity != opacity) neonMount.Opacity = opacity;
+            return;
+        }
+        if (glitch is not null)
+        {
+            var track = app.Media.Current;
+            var scene = app.Scene;
+            if (NeedsCoverPalette(scene) && !ReferenceEquals(sampledArtwork, track.Artwork)) Apply();
+            var options = scene.Glitch;
+            glitch.Render(GetArtwork(track.Artwork), PreviewMediaWidget && !track.HasTrack ? NeonSample : track, frame, options, glitchTint);
+            var opacity = GlitchOpacity(track.IsPlaying || PreviewMediaWidget, options.Idle, timer.ElapsedMilliseconds);
+            if (glitch.Opacity != opacity) glitch.Opacity = opacity;
             return;
         }
         long now = timer.ElapsedMilliseconds;
@@ -184,9 +206,10 @@ internal sealed class WidgetView : Grid
     public void RenderLyrics()
     {
         if (lyrics is null) return;
-        var position = app.LyricsPosition;
-        var now = timer.ElapsedMilliseconds;
-        lyrics.Update(app.Lyrics, position, now, app.LyricsMessage, app.Scene.LyricsTextSize);
+        var song = app.Media.Current;
+        UpdatePalette(song.Artwork);
+        lyrics.SetCoverColor(coverPalette?.First);
+        lyrics.Update(app.Lyrics, app.LyricsPositionFor(song), timer.ElapsedMilliseconds, app.LyricsMessage, app.Scene.LyricsTextSize);
     }
 
     private void Build()
@@ -203,6 +226,8 @@ internal sealed class WidgetView : Grid
         media = null;
         neon = null;
         neonMount = null;
+        glitch = null;
+        glitchPausedAt = null;
         clock = null;
         lyrics = null;
         dataPanel = null;
@@ -238,6 +263,10 @@ internal sealed class WidgetView : Grid
                 neon = new NeonSign();
                 neonMount = new Border { Child = neon, CornerRadius = new CornerRadius(13), BorderThickness = new Thickness(1) };
                 Children.Add(neonMount);
+                break;
+            case WidgetKind.GlitchBox:
+                glitch = new GlitchBox();
+                Children.Add(glitch);
                 break;
             case WidgetKind.Span:
                 visual = new Visualizer();
@@ -432,7 +461,7 @@ internal sealed class WidgetView : Grid
                 if (fileMessage is not null) fileMessage.Visibility = Visibility.Collapsed;
             }
         }
-        catch (Exception ex) when (ex is IOException or NotSupportedException or ArgumentException or System.Runtime.InteropServices.COMException)
+        catch (Exception ex) when (ex is IOException or FormatException or NotSupportedException or ArgumentException or System.Runtime.InteropServices.COMException)
         {
             ShowWallpaperMessage("This wallpaper file could not be opened.");
         }
@@ -481,7 +510,7 @@ internal sealed class WidgetView : Grid
         Effect = new BlurEffect { Radius = 37, RenderingBias = RenderingBias.Performance }
     };
 
-    private static BitmapSource? GetArtwork(byte[]? bytes)
+    internal static BitmapSource? GetArtwork(byte[]? bytes)
     {
         if (bytes is null) return null;
         try
@@ -505,8 +534,9 @@ internal sealed class WidgetView : Grid
         }
     }
 
-    private bool NeedsCoverPalette(SceneOptions scene) => scene.MoodColor || kind == WidgetKind.Mood ||
-        kind == WidgetKind.Neon && scene.Neon.Colors == NeonColors.Album || paletteOverride == PaletteCount;
+    private bool NeedsCoverPalette(SceneOptions scene) => lyrics is not null || scene.MoodColor || kind == WidgetKind.Mood ||
+        kind == WidgetKind.Neon && scene.Neon.Colors == NeonColors.Album ||
+        kind == WidgetKind.GlitchBox && scene.Glitch.Colors == GlitchColors.Album || paletteOverride == PaletteCount;
 
     private void UpdatePalette(byte[]? artwork)
     {
@@ -521,10 +551,11 @@ internal sealed class WidgetView : Grid
     private (Color?, Color?) ResolveNeonColors(NeonOptions options, VisualSettings style, AlbumPalette? artwork) => options.Colors switch
     {
         NeonColors.WarmWhite => (Color.FromRgb(255, 218, 164), Color.FromRgb(250, 239, 219)),
+        NeonColors.RoseIce => (Color.FromRgb(249, 103, 170), Color.FromRgb(117, 216, 250)),
         NeonColors.Album when coverPalette is { } cover => (cover.First, cover.Middle),
         NeonColors.Visualizer when artwork is { } art => (art.First, art.Last),
         NeonColors.Visualizer => VisualizerColors(style),
-        NeonColors.Custom => (NeonColor(options.TitleColor), NeonColor(options.ArtistColor)),
+        NeonColors.Custom => (ParseHexColor(options.TitleColor), ParseHexColor(options.ArtistColor)),
         _ => (null, null)
     };
 
@@ -534,7 +565,21 @@ internal sealed class WidgetView : Grid
         return (first, last);
     }
 
-    private static Color? NeonColor(string value)
+    private double GlitchOpacity(bool playing, GlitchIdle idle, long now)
+    {
+        if (playing)
+        {
+            glitchPausedAt = null;
+            return 1;
+        }
+
+        var pausedAt = glitchPausedAt ??= now;
+        if (idle == GlitchIdle.Keep || now - pausedAt < 6000) return 1;
+        var progress = SystemParameters.ClientAreaAnimation ? Math.Clamp((now - pausedAt - 6000) / 300d, 0, 1) : 1;
+        return 1 - (idle == GlitchIdle.Hide ? 1 : .7) * progress;
+    }
+
+    private static Color? ParseHexColor(string value)
     {
         var text = value.AsSpan().Trim();
         return text.Length == 7 && text[0] == '#' && uint.TryParse(text[1..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hex)
@@ -985,7 +1030,7 @@ internal sealed class WidgetView : Grid
         private readonly StackPanel? lines;
         private readonly LyricFlow? flow;
         private readonly ScrollViewer? plainView;
-        private readonly TextBlock? plainText;
+        private readonly LyricText? plainContent;
         private readonly TranslateTransform lift = new();
         private readonly TranslateTransform marqueeOffset = new();
         private LyricsTrack? previousTrack;
@@ -994,6 +1039,7 @@ internal sealed class WidgetView : Grid
         private long lastTick;
         private TimeSpan lastPosition;
         private string previousMessage = "";
+        private Color? coverColor;
 
         public LyricsPanel(LyricsStyle style, bool useBackdrop = false)
         {
@@ -1035,7 +1081,8 @@ internal sealed class WidgetView : Grid
                 Background = useBackdrop && (style is LyricsStyle.Subtitles or LyricsStyle.Panel) ? Glass : Brushes.Transparent };
             if (style == LyricsStyle.Panel)
             {
-                plainText = Studio.Text("", 14, Studio.Paper);
+                var plainText = Studio.Text("", 14, Studio.Paper);
+                plainContent = new LyricText(plainText);
                 plainView = new ScrollViewer { Content = plainText, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     Visibility = Visibility.Collapsed, Padding = new Thickness(3) };
                 var content = new Grid();
@@ -1047,6 +1094,15 @@ internal sealed class WidgetView : Grid
                 inset.VerticalAlignment = VerticalAlignment.Stretch;
             }
             Children.Add(inset);
+        }
+
+        public void SetCoverColor(Color? color)
+        {
+            if (coverColor == color) return;
+            coverColor = color;
+            flow?.SetCoverColor(color);
+            foreach (var row in textRows) row.SetCoverColor(color);
+            plainContent?.SetCoverColor(color);
         }
 
         public void Update(LyricsTrack? track, TimeSpan position, long now, string status, double textSize)
@@ -1072,11 +1128,11 @@ internal sealed class WidgetView : Grid
                 lineChanged = now;
                 AnimateLine(step);
                 bool showPlain = track is { Lines.Count: 0 } && track.PlainText.Length > 0;
-                if (plainView is not null && plainText is not null)
+                if (plainView is not null)
                 {
                     plainView.Visibility = showPlain ? Visibility.Visible : Visibility.Collapsed;
                     if (lines is not null) lines.Visibility = showPlain ? Visibility.Collapsed : Visibility.Visible;
-                    SetLine(plainText, showPlain ? track!.PlainText : "");
+                    plainContent?.SetPlain(showPlain ? track!.PlainText : "");
                 }
                 if (track is null || track.Lines.Count == 0)
                 {
@@ -1115,13 +1171,6 @@ internal sealed class WidgetView : Grid
                 else textRows[row].Fit(ActualWidth - 40, rowHeight, active ? textSize : Math.Max(10, textSize * .72));
                 textRows[row].HighlightAt(position, currentLine: active);
             }
-        }
-
-        private static void SetLine(TextBlock element, string text)
-        {
-            if (element.Text == text) return;
-            element.Text = text;
-            element.FlowDirection = LyricFlow.DirectionFor(text);
         }
 
         private void AnimateLine(bool step)

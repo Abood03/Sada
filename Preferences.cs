@@ -3,14 +3,17 @@ using System.Text.Json.Serialization;
 
 namespace Sada;
 
-public enum WidgetKind { Visualizer, Clock, Lyrics, Media, Environment, Wallpaper, AlbumBackdrop, ScreenGlow, Span, Fluid, Snow, CursorTrail, Waves, Listening, Calendar, Weather, System, Disks, Mood, Flock, Cassette, Disc, Neon }
+public enum WidgetKind { Visualizer, Clock, Lyrics, Media, Environment, Wallpaper, AlbumBackdrop, ScreenGlow, Span, Fluid, Snow, CursorTrail, Waves, Listening, Calendar, Weather, System, Disks, Mood, Flock, Cassette, Disc, Neon, GlitchBox }
 public enum Placement { Desktop, Floating, OnTop }
 public enum ClockFace { Digital, Stacked, Minimal, Analog, Words }
 public enum CardLayout { Compact, Centered, Cover, TextOnly }
 public enum LyricsStyle { Flow, Single, Karaoke, Subtitles, Panel, Marquee }
 public enum Backdrop { Studio, Album, Image, Transparent }
-public enum NeonColors { Sada, WarmWhite, Visualizer, Album, Custom }
+public enum NeonColors { Sada, WarmWhite, Visualizer, Album, Custom, RoseIce }
 public enum NeonIdle { ShowTube, Fade, Hide }
+public enum GlitchContent { Artwork, Title }
+public enum GlitchColors { Album, Visualizer, Custom }
+public enum GlitchIdle { Keep, Dim, Hide }
 
 public sealed class NeonOptions
 {
@@ -24,8 +27,21 @@ public sealed class NeonOptions
     public bool ShowNote { get; set; } = true;
     public bool ClickToPlay { get; set; }
     public double ReactionStrength { get; set; } = 1;
+    public double GlowIntensity { get; set; } = 1;
+    public bool GlassTrim { get; set; } = true;
     public string TitleColor { get; set; } = "#70F2D1";
     public string ArtistColor { get; set; } = "#B6A4FF";
+}
+
+public sealed class GlitchOptions
+{
+    public GlitchContent Content { get; set; }
+    public GlitchColors Colors { get; set; }
+    public GlitchIdle Idle { get; set; }
+    public double Intensity { get; set; } = .65;
+    public double MusicResponse { get; set; } = 1;
+    public bool Scanlines { get; set; } = true;
+    public string Accent { get; set; } = "#69D6CF";
 }
 
 public sealed class WidgetOptions
@@ -78,6 +94,10 @@ public sealed class SceneOptions
     public double? FullNeonX { get; set; }
     public double? FullNeonY { get; set; }
     public NeonOptions Neon { get; set; } = new();
+    public bool FullGlitchBox { get; set; }
+    public double? FullGlitchX { get; set; }
+    public double? FullGlitchY { get; set; }
+    public GlitchOptions Glitch { get; set; } = new();
     public int GlowStyle { get; set; }
     public double GlowStrength { get; set; } = .58;
     public bool AllMonitors { get; set; }
@@ -95,6 +115,7 @@ public sealed class SceneOptions
             WidgetKind.Clock => new WidgetOptions { Width = 360, Height = 158 },
             WidgetKind.Media => new WidgetOptions { Width = 380, Height = 192 },
             WidgetKind.Neon => new WidgetOptions { Width = 570, Height = 168 },
+            WidgetKind.GlitchBox => new WidgetOptions { Width = 300, Height = 300 },
             WidgetKind.CursorTrail or WidgetKind.ScreenGlow => new WidgetOptions { Locked = true, Placement = Placement.OnTop },
             WidgetKind.Snow or WidgetKind.Environment or WidgetKind.Wallpaper or WidgetKind.AlbumBackdrop or WidgetKind.Span
                 => new WidgetOptions { Locked = true },

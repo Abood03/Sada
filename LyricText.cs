@@ -12,10 +12,13 @@ internal sealed class LyricText
         TextEffectTarget[]?[] PrefixEffects, TextEffectTarget[]?[] FadeEffects);
 
     readonly TextBlock block;
-    readonly Brush foreground;
+    readonly Brush defaultForeground;
+    readonly Color defaultForegroundColor;
+    readonly SolidColorBrush coverForeground = new();
+    readonly SolidColorBrush activeBrush = new(StudioUi.Mint.Color);
     readonly SolidColorBrush fadeBrush = new();
-    readonly Color foregroundColor;
     readonly List<TimedWord> words = [];
+    Color? coverColor;
     LyricsTrack? source;
     int line = -1;
     string text = "";
@@ -27,13 +30,43 @@ internal sealed class LyricText
     TextEffectTarget[] activeEffects = [];
     TextEffectTarget[] fadeEffects = [];
     int fadedLetter = -1;
+    double fadeMix;
 
     public LyricText(TextBlock block)
     {
         this.block = block;
-        foreground = block.Foreground;
-        foregroundColor = (foreground as SolidColorBrush)?.Color ?? Colors.White;
+        defaultForeground = block.Foreground;
+        defaultForegroundColor = (defaultForeground as SolidColorBrush)?.Color ?? Colors.White;
         block.TextTrimming = TextTrimming.None;
+    }
+
+    internal void SetCoverColor(Color? color)
+    {
+        if (coverColor == color) return;
+        coverColor = color;
+        if (color is { } hue)
+        {
+            coverForeground.Color = ReadableCoverColor(hue);
+            activeBrush.Color = Mix(coverForeground.Color, Colors.White, .62);
+            block.Foreground = coverForeground;
+        }
+        else
+        {
+            activeBrush.Color = StudioUi.Mint.Color;
+            block.Foreground = defaultForeground;
+        }
+
+        if (fadedLetter >= 0) UpdateFadeBrush(fadeMix);
+    }
+
+    internal static Color ReadableCoverColor(Color color)
+    {
+        // Move only toward white or black so the cover hue stays recognizable.
+        // Leave a separate brightness band for the active letters.
+        double brightness = color.R * .2126 + color.G * .7152 + color.B * .0722;
+        if (brightness < 164) return Mix(color, Colors.White, (164 - brightness) / (255 - brightness));
+        if (brightness > 205) return Mix(color, Colors.Black, (brightness - 205) / brightness);
+        return Color.FromRgb(color.R, color.G, color.B);
     }
 
     public void SetTimed(LyricsTrack track, int index)
@@ -59,7 +92,7 @@ internal sealed class LyricText
             var word = timing[n];
             var nextEnd = n == timing.Count - 1 ? text.Length : Math.Min(text.Length, word.Start + word.Length);
             if (nextEnd <= end) continue;
-            var part = new Run(text[end..nextEnd]) { Foreground = foreground };
+            var part = new Run(text[end..nextEnd]);
             var wordStart = Math.Clamp(word.Start, end, nextEnd);
             var wordEnd = Math.Clamp(word.Start + word.Length, wordStart, nextEnd);
             while (wordStart < wordEnd && char.IsWhiteSpace(text[wordStart])) wordStart++;
@@ -117,7 +150,7 @@ internal sealed class LyricText
             ClearHighlight();
             displayedWord = active;
             highlightedLetters = count;
-            activeEffects = word.PrefixEffects[count - 1] ??= ResolveRange(word, 0, word.LetterEnds[count - 1], StudioUi.Mint);
+            activeEffects = word.PrefixEffects[count - 1] ??= ResolveRange(word, 0, word.LetterEnds[count - 1], activeBrush);
             foreach (var effect in activeEffects) effect.Enable();
         }
 
@@ -127,15 +160,19 @@ internal sealed class LyricText
             ClearFade();
             return;
         }
-        var mix = Math.Clamp((fraction - .18) / .82, 0, 1);
-        var tint = StudioUi.Mint.Color;
-        var color = Color.FromRgb(Blend(foregroundColor.R, tint.R, mix), Blend(foregroundColor.G, tint.G, mix), Blend(foregroundColor.B, tint.B, mix));
-        if (fadeBrush.Color != color) fadeBrush.Color = color;
+        UpdateFadeBrush(Math.Clamp((fraction - .18) / .82, 0, 1));
         if (fadedLetter == count) return;
         ClearFade();
         fadedLetter = count;
         fadeEffects = word.FadeEffects[count] ??= ResolveRange(word, word.LetterEnds[count - 1], word.LetterEnds[count], fadeBrush);
         foreach (var effect in fadeEffects) effect.Enable();
+    }
+
+    void UpdateFadeBrush(double mix)
+    {
+        fadeMix = mix;
+        var color = Mix(coverColor.HasValue ? coverForeground.Color : defaultForegroundColor, activeBrush.Color, mix);
+        if (fadeBrush.Color != color) fadeBrush.Color = color;
     }
 
     int WordAt(TimeSpan position)
@@ -154,11 +191,16 @@ internal sealed class LyricText
     {
         var start = word.Run.ContentStart.GetPositionAtOffset(word.TextStart + from);
         var stop = word.Run.ContentStart.GetPositionAtOffset(word.TextStart + to);
-        return start is not null && stop is not null
-            ? TextEffectResolver.Resolve(start, stop, new TextEffect { Foreground = color }) : [];
+        if (start is null || stop is null) return [];
+        var targets = TextEffectResolver.Resolve(start, stop, new TextEffect());
+        // Attach the shared brush after WPF clones the effect for each text range.
+        foreach (var target in targets) target.TextEffect.Foreground = color;
+        return targets;
     }
 
     static byte Blend(byte from, byte to, double mix) => (byte)Math.Round(from + (to - from) * mix);
+    static Color Mix(Color from, Color to, double mix) =>
+        Color.FromRgb(Blend(from.R, to.R, mix), Blend(from.G, to.G, mix), Blend(from.B, to.B, mix));
 
     void ClearFade()
     {
@@ -187,7 +229,7 @@ internal sealed class LyricText
         var family = new Typeface(block.FontFamily, block.FontStyle, block.FontWeight, block.FontStretch);
         var dpi = VisualTreeHelper.GetDpi(block).PixelsPerDip;
         FormattedText Measure(double pointSize) => new(text, CultureInfo.CurrentUICulture, block.FlowDirection, family,
-            pointSize, foreground, dpi);
+            pointSize, block.Foreground, dpi);
 
         if (text.Length == 0)
         {

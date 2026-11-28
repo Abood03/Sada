@@ -59,6 +59,7 @@ internal sealed class LyricsStudio : Window
     bool movingTimeline;
     bool changed;
     readonly bool savedTiming;
+    byte[]? previewArtwork;
 
     internal LyricsStudio(MediaSnapshot recording, LyricTimingDraft draft, bool hasSavedTiming,
         Func<MediaSnapshot?> pinnedPlayback, Func<bool, Task<bool>> setPlaying,
@@ -101,7 +102,8 @@ internal sealed class LyricsStudio : Window
         EnterApplies(wordEnd, applyEnd);
 
         var header = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 14) };
-        if (Dashboard.ReadImage(recording.Artwork) is { } artwork)
+        UpdateCoverColor(recording.Artwork);
+        if (WidgetView.GetArtwork(recording.Artwork) is { } artwork)
         {
             var image = new Image { Source = artwork, Width = 62, Height = 62, Stretch = Stretch.UniformToFill };
             var cover = new Border { Child = image, CornerRadius = new CornerRadius(9), Margin = new Thickness(0, 0, 13, 0) };
@@ -460,6 +462,7 @@ internal sealed class LyricsStudio : Window
         }
         else
         {
+            if (playback.Artwork is not null) UpdateCoverColor(playback.Artwork);
             if (following && !timeline.IsMouseCaptureWithin) SetTimeline(playback.Position);
             playerStatus.Text = playback.YouTubeVideoId is not null
                 ? "Use YouTube to play, pause, or seek. This preview follows the video."
@@ -470,6 +473,13 @@ internal sealed class LyricsStudio : Window
         }
         RenderPreview();
         UpdateButtons(playback);
+    }
+
+    void UpdateCoverColor(byte[]? artwork)
+    {
+        if (ReferenceEquals(previewArtwork, artwork)) return;
+        previewArtwork = artwork;
+        preview.SetCoverColor(AlbumPalette.From(WidgetView.GetArtwork(artwork))?.First);
     }
 
     void CheckReplay(MediaSnapshot playback, Range range)

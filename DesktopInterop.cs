@@ -182,12 +182,13 @@ internal static class DesktopInterop
         return window.PointFromScreen(new Point(position.X, position.Y));
     }
 
-    public static bool Covered(Window window)
+    public static bool Covered(Window window, nint opaqueStudioWindow)
     {
         var foreground = GetForegroundWindow();
         if (foreground == 0 || !GetWindowRect(foreground, out var active)) return false;
         GetWindowThreadProcessId(foreground, out var pid);
-        if (pid == Environment.ProcessId || foreground == lastShell || foreground == lastHost) return false;
+        if ((pid == Environment.ProcessId && foreground != opaqueStudioWindow) || foreground == lastShell || foreground == lastHost)
+            return false;
         if (!GetWindowRect(WindowHandle(window), out var bounds)) return false;
         return active.Left <= bounds.Left && active.Top <= bounds.Top && active.Right >= bounds.Right && active.Bottom >= bounds.Bottom;
     }

@@ -12,6 +12,8 @@
   </p>
 </div>
 
+The [latest release](https://github.com/Abood03/Sada/releases/latest) is **1.5.3**, with Glitch Box, richer Neon Sign controls, cover-colored lyrics, and less rendering work in the background. [Changelog](CHANGELOG.md#153--less-rendering-and-background-work)
+
 ## Get started
 
 1. Download the Windows x64 ZIP from [Latest release](https://github.com/Abood03/Sada/releases/latest), extract it, and run `Sada.exe`. The portable package includes the .NET runtime.
@@ -32,7 +34,7 @@ Arrange transparent widgets on your desktop, place album artwork in the center o
 <details>
 <summary><strong>Spotify, YouTube, and synchronized lyrics</strong></summary>
 
-Sada follows the active Windows media session and can fetch lyrics by track metadata. Follow the current line with surrounding lines in view. The optional Chrome and Edge extension supplies playback time and video identity for YouTube watch pages.
+Sada follows the active Windows media session and can fetch lyrics by track metadata. Follow the current line with surrounding lines in view and a highlight tinted by the cover art. The optional Chrome and Edge extension supplies playback time and video identity for YouTube watch pages.
 
 [Playback sources](docs/features.md#playback-sources) · [Lyrics display](docs/features.md#synchronized-lyrics) · [Set up YouTube](docs/youtube.md)
 
@@ -53,6 +55,15 @@ Tap a line as you hear it, adjust individual word boundaries, or shift an entire
 Show the current track as illuminated tubing. The title follows the album artwork, the glow cuts out when playback pauses, and the tubes relight progressively when playback resumes.
 
 [Neon controls](docs/neon-and-motion.md) · [Full-screen controls](docs/features.md#full-screen)
+
+</details>
+
+<details>
+<summary><strong>Glitch Box</strong></summary>
+
+Turn the current cover or title into an audio-reactive widget with short bursts of color separation and shifting slices. Adjust the strength, accent colors, and scanlines, or show it in full screen with its own position.
+
+[Glitch Box setup](docs/glitch-box.md)
 
 </details>
 

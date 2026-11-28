@@ -12,6 +12,7 @@
 | **1.3.0** | YouTube playback detection, manual song matching, and an optional browser bridge. |
 | **1.4.0** | Neon Sign for desktop and full screen, smoother lyric transitions, and crossfades between visualizer effects. |
 | [**1.4.1**](https://github.com/Abood03/Sada/releases/tag/v1.4.1) | Neon colors derived from the cover, dim glass visible after playback stops, and gradual relighting on resume. |
+| [**1.5.3**](https://github.com/Abood03/Sada/releases/tag/v1.5.3) | Refined Neon Sign controls, Glitch Box, cover-colored lyrics, an About page, and less rendering and background work. |
 
 The GitHub release history starts at **1.2.0**. See the [changelog](../CHANGELOG.md) for the complete history of Windows versions.
 
@@ -27,7 +28,7 @@ Compare the source and edited timing against real playback with long vocal pause
 <details>
 <summary>Desktop and full-screen behavior across displays</summary>
 
-Check transparent widgets, independent Neon placement in full screen, Windows reduced motion, and scene restoration after disconnecting a monitor. Repeat at common display scaling settings.
+Check transparent widgets, independent Neon Sign and Glitch Box placement in full screen, Windows reduced motion, and scene restoration after disconnecting a monitor. Repeat at common display scaling settings.
 
 </details>
 

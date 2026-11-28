@@ -5,7 +5,7 @@
 Pick a feature and expand its guide. The paths below use the labels in Sada Studio.
 
 - [Desktop scenes](#desktop-scenes) · [Visualizer](#visualizer) · [Playback sources](#playback-sources)
-- [Synchronized lyrics](#synchronized-lyrics) · [Lyrics Studio](#lyrics-studio) · [Neon Sign](#neon-sign)
+- [Synchronized lyrics](#synchronized-lyrics) · [Lyrics Studio](#lyrics-studio) · [Neon Sign](#neon-sign) · [Glitch Box](#glitch-box)
 - [Widget catalog](#widget-catalog) · [Full screen](#full-screen) · [Audio and system](#audio-and-system)
 
 ## Desktop scenes
@@ -78,6 +78,8 @@ If a video's title includes a nickname, translation, or promotional text, use **
 
 Sada can look up lyrics from LRCLIB or load a local file. Timed lyrics follow the playback position and highlight text progressively.
 
+Lyric text follows the cover's primary color, and active letters fill with a lighter shade of that hue. The desktop widget, full-screen lyrics, and the Lyrics Studio preview share this palette. Without artwork, Sada uses neutral text and a mint highlight.
+
 <details>
 <summary>Choose a layout and correct a timing offset</summary>
 
@@ -134,6 +136,23 @@ Open **Desktop widgets → Neon sign** and enable either **Show neon on the desk
 
 **Album cover** uses the dominant cover color for the title and an accent for the artist. When playback pauses, the glow flickers out and leaves the glass visible. Playback resuming lights the text progressively. Drag the sign in full screen to save its position independently from the desktop. [Neon Sign and motion guide](neon-and-motion.md)
 
+Use **Glow intensity** to adjust the light around the tubes, **Show glass trim** to toggle the detailing, or the **Rose and ice** palette for a rose title and icy blue artist line.
+
+</details>
+
+## Glitch Box
+
+Glitch Box shows the current cover or title, then adds short bursts of color separation and shifted horizontal slices when tracks change or the music triggers them.
+
+<details>
+<summary>Set up Glitch Box and tune its effects</summary>
+
+Open **Desktop widgets → Glitch Box**. Enable **Show Glitch Box**, **Show Glitch Box in full screen**, or both. Use the desktop scene editor to move and resize the widget. Drag the full-screen overlay to save its own position.
+
+Choose album artwork or the track title. If the player supplies no cover, the widget shows the title. Set the intensity, choose album, visualizer, or custom accent colors, and turn scanlines on or off. Music response controls beat-triggered effects. Set the idle behavior to keep, dim, or hide the widget when playback stops.
+
+[Glitch Box setup and controls](glitch-box.md)
+
 </details>
 
 ## Widget catalog
@@ -147,6 +166,7 @@ Open **Desktop widgets → Choose a widget** for a preview and individual settin
 | **Now playing** | Title, artist, and playback controls in Compact, Centered, Cover, or Text Only layout. |
 | **Cassette** and **Disc player** | Alternative track cards with cassette styling or a rotating disc design. |
 | [Neon sign](#neon-sign) | An animated title and artist overlay with album-derived colors. |
+| [Glitch Box](#glitch-box) | Album art or track title with short glitch effects. |
 | **Album colors** | Three swatches sampled from the current cover. |
 | **Listening stats** | Today's listening time and track count, plus total time, unique tracks, and top artist from local history. |
 
@@ -181,7 +201,7 @@ Full screen combines the visualizer with a configurable backdrop and optional me
 <details>
 <summary>Set up full screen and use keyboard controls</summary>
 
-Open **Media & lyrics → Full screen**. Choose **Studio**, **Album**, **Image**, or **Transparent** as the backdrop. **Choose image or video…** loads a local file for the Image backdrop. Toggle playback controls, clock, and lyrics independently. Enable the full-screen Neon Sign from its own widget settings.
+Open **Media & lyrics → Full screen**. Choose **Studio**, **Album**, **Image**, or **Transparent** as the backdrop. **Choose image or video…** loads a local file for the Image backdrop. Toggle playback controls, clock, and lyrics independently. Enable the full-screen Neon Sign and Glitch Box from their widget settings and drag each overlay to position it.
 
 Use **Enter full screen**, the dashboard's **Full screen** button, or the tray menu.
 
@@ -203,7 +223,7 @@ Open **Audio & system** to choose what Sada listens to and how it behaves in Win
 <summary>Change your input, display, and performance settings</summary>
 
 - **Capture device** selects the default Windows playback output, another output, or a microphone. Use **Refresh devices** after connecting new hardware. **Sensitivity** changes how strongly visuals react, and **Smoothing** controls how quickly they follow signal changes.
-- **Frame cap** limits rendering to 24, 30, 60, or 120 fps. **Reduce refresh while silent** and **Pause covered widgets** can reduce drawing when widgets are inactive or covered.
+- **Frame cap** sets the audio-reactive visual refresh rate to 24, 30, 60, or 120 fps. Lower caps trade smoother motion for fewer updates. **Reduce refresh while silent** slows audio-driven updates when the signal is quiet. **Pause covered widgets** pauses drawing for covered desktop widgets, including lyrics, except those placed **Always on top**.
 - **Widget monitor** chooses the active display. **Repeat full-size effects on every monitor** duplicates Environment, Wallpaper, Album backdrop, and Screen glow across displays.
 - **Launch at Windows login** starts Sada in the tray. **Exit Sada** stops it.
 - If **Global shortcuts** are enabled, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> shows or hides desktop widgets, and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> opens or closes full screen.

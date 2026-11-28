@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,6 +14,8 @@ namespace Sada;
 
 internal sealed class Dashboard : Window
 {
+    const string DeveloperProfile = "https://github.com/Abood03";
+
     readonly App app;
     SceneOptions Scene => app.Scene;
     readonly ContentControl canvas = new();
@@ -38,6 +42,11 @@ internal sealed class Dashboard : Window
     TextBlock? songTimingStatus;
     Button[] songTimingButtons = [];
     long lastDisplay;
+    long lastPreviewFrame;
+
+    internal bool WantsSystemReadings =>
+        widgetPreview is not null && (selectedWidget is WidgetKind.System or WidgetKind.Disks) ||
+        scenePreview is not null && (Scene.Widget(WidgetKind.System).Enabled || Scene.Widget(WidgetKind.Disks).Enabled);
 
     internal Dashboard(App app)
     {
@@ -165,6 +174,7 @@ internal sealed class Dashboard : Window
         if (previewLabel != null) previewLabel.Text = Friendly(Scene.Visual.Mode.ToString());
         signalType.Text = app.Prefs.Microphone ? "MICROPHONE" : "WINDOWS PLAYBACK";
         widgetPreview?.Apply();
+        SizeGlitchPreview();
         scenePreview?.Apply();
     }
 
@@ -180,7 +190,7 @@ internal sealed class Dashboard : Window
         songTimingStatus = null;
         songTimingButtons = [];
         nav.Children.Clear();
-        foreach (var item in new[] { ("Scenes", "◈"), ("Visualizer", "∿"), ("Desktop widgets", "⊞"), ("Media & lyrics", "♫"), ("Profiles", "▤"), ("Audio & system", "◌") })
+        foreach (var item in new[] { ("Scenes", "◈"), ("Visualizer", "∿"), ("Desktop widgets", "⊞"), ("Media & lyrics", "♫"), ("Profiles", "▤"), ("Audio & system", "◌"), ("About", "ⓘ") })
         {
             var tab = Button($"{item.Item2}   {item.Item1}", () => Navigate(item.Item1), page == item.Item1);
             tab.HorizontalContentAlignment = HorizontalAlignment.Left;
@@ -193,6 +203,7 @@ internal sealed class Dashboard : Window
             "Media & lyrics" => BuildMedia(),
             "Profiles" => BuildProfiles(),
             "Audio & system" => BuildSystem(),
+            "About" => BuildAbout(),
             "Visualizer" => BuildStudio(),
             _ => BuildScenes()
         };
@@ -326,6 +337,8 @@ internal sealed class Dashboard : Window
         var detail = Stack(Check(label, current.Enabled, value => { current.Enabled = value; app.ApplyChanges(); }));
         if (selectedWidget == WidgetKind.Neon)
             detail.Children.Add(Check("Show neon in full screen", Scene.FullNeon, value => { Scene.FullNeon = value; app.ApplyChanges(); }));
+        if (selectedWidget == WidgetKind.GlitchBox)
+            detail.Children.Add(Check("Show Glitch Box in full screen", Scene.FullGlitchBox, value => { Scene.FullGlitchBox = value; app.ApplyChanges(); }));
         detail.Children.Add(Choice("Placement", Enum.GetValues<Placement>(), current.Placement, value => { current.Placement = value; app.ApplyChanges(); },
             x => x switch { Placement.Desktop => "On the desktop", Placement.Floating => "Normal window", _ => "Always on top" }));
         detail.Children.Add(Range("Widget opacity", .08, 1, current.Opacity, value => { current.Opacity = value; app.ApplyChanges(); }));
@@ -333,12 +346,15 @@ internal sealed class Dashboard : Window
         {
             detail.Children.Add(Range("Backdrop", 0, 1, current.Surface, value => { current.Surface = value; app.ApplyChanges(); }));
             detail.Children.Add(Check("Lock position and ignore clicks", current.Locked, value => { current.Locked = value; app.ApplyChanges(); }));
-            detail.Children.Add(Choice("Size preset", new[] { "Custom", "Small", "Medium", "Large", "Wide", "Banner" }, "Custom", value =>
+            string[] sizes = selectedWidget == WidgetKind.GlitchBox
+                ? ["Custom", "Small", "Medium", "Large", "Square", "Wide", "Banner"]
+                : ["Custom", "Small", "Medium", "Large", "Wide", "Banner"];
+            detail.Children.Add(Choice("Size preset", sizes, "Custom", value =>
             {
                 (current.Width, current.Height) = value switch
                 {
                     "Small" => (240, 150), "Medium" => (340, 260), "Large" => (490, 390),
-                    "Wide" => (720, 250), "Banner" => (960, 170), _ => (current.Width, current.Height)
+                    "Square" => (360, 360), "Wide" => (720, 250), "Banner" => (960, 170), _ => (current.Width, current.Height)
                 };
                 app.ApplyChanges();
             }));
@@ -365,6 +381,9 @@ internal sealed class Dashboard : Window
                 break;
             case WidgetKind.Neon:
                 detail.Children.Add(NeonControls());
+                break;
+            case WidgetKind.GlitchBox:
+                detail.Children.Add(GlitchControls());
                 break;
             case WidgetKind.Environment:
                 detail.Children.Add(Choice("Environment", new[] { "Dusk", "Tides", "Skyline" }, new[] { "Dusk", "Tides", "Skyline" }[Math.Clamp(Scene.EnvironmentStyle, 0, 2)], value =>
@@ -393,8 +412,14 @@ internal sealed class Dashboard : Window
         var controls = Card(detail);
         controls.Margin = new Thickness(0, 0, 11, 0);
         pair.Children.Add(controls);
-        widgetPreview = new WidgetView(app, selectedWidget, false) { Height = 248, ClipToBounds = true, PreviewNeon = selectedWidget == WidgetKind.Neon };
-        var render = Card(Stack(Label("WIDGET PREVIEW"), widgetPreview), Night, 11);
+        widgetPreview = new WidgetView(app, selectedWidget, false) { Height = 248, ClipToBounds = true, PreviewMediaWidget = true };
+        FrameworkElement previewSurface = widgetPreview;
+        if (selectedWidget == WidgetKind.GlitchBox)
+        {
+            SizeGlitchPreview();
+            previewSurface = new Viewbox { Height = 248, Stretch = Stretch.Uniform, Child = widgetPreview };
+        }
+        var render = Card(Stack(Label("WIDGET PREVIEW"), previewSurface), Night, 11);
         render.VerticalAlignment = VerticalAlignment.Top;
         Grid.SetColumn(render, 1);
         pair.Children.Add(render);
@@ -414,6 +439,14 @@ internal sealed class Dashboard : Window
         return page;
     }
 
+    void SizeGlitchPreview()
+    {
+        if (selectedWidget != WidgetKind.GlitchBox || widgetPreview is null) return;
+        var size = Scene.Widget(WidgetKind.GlitchBox);
+        widgetPreview.Width = Math.Clamp(size.Width, 140, 2000);
+        widgetPreview.Height = Math.Clamp(size.Height, 90, 1260);
+    }
+
     UIElement NeonControls()
     {
         var options = Scene.Neon;
@@ -427,8 +460,10 @@ internal sealed class Dashboard : Window
                 options.Colors = value;
                 inks.Visibility = value == NeonColors.Custom ? Visibility.Visible : Visibility.Collapsed;
                 app.ApplyChanges();
-            }, value => value == NeonColors.Album ? "Album cover" : Friendly(value.ToString())),
+            }, value => value switch { NeonColors.Album => "Album cover", NeonColors.RoseIce => "Rose and ice", _ => Friendly(value.ToString()) }),
             inks,
+            Range("Glow intensity", 0, 2, options.GlowIntensity, value => { options.GlowIntensity = value; app.QueueSave(); }),
+            Check("Show glass trim", options.GlassTrim, value => { options.GlassTrim = value; app.QueueSave(); }),
             Choice("Music response", Enum.GetValues<NeonReaction>(), options.Reaction, value => { options.Reaction = value; app.ApplyChanges(); },
                 value => value == NeonReaction.Surge ? "Power surge" : Friendly(value.ToString())),
             Range("Response strength", 0, 2, options.ReactionStrength, value => { options.ReactionStrength = value; app.QueueSave(); }),
@@ -438,9 +473,44 @@ internal sealed class Dashboard : Window
             Check("Acrylic backing", options.Acrylic, value => { options.Acrylic = value; app.ApplyChanges(); }),
             Check("Show artist", options.ShowArtist, value => { options.ShowArtist = value; app.ApplyChanges(); }),
             Check("Show music note", options.ShowNote, value => { options.ShowNote = value; app.ApplyChanges(); }),
-            Check("Click desktop sign to play or pause", options.ClickToPlay, value => { options.ClickToPlay = value; app.ApplyChanges(); }));
+            Check("Click desktop sign to play or pause", options.ClickToPlay, value => { options.ClickToPlay = value; app.ApplyChanges(); }),
+            Button("Reset neon look", () => ResetWidgetLook(() => Scene.Neon = new NeonOptions())));
+    }
 
-        UIElement ColorInput(string label, string current, Action<string> save) => Entry(label, current, value =>
+    UIElement GlitchControls()
+    {
+        var options = Scene.Glitch;
+        const double subtle = .28, medium = .65, heavy = 1;
+        var accent = ColorInput("Accent color", options.Accent, value => options.Accent = value);
+        accent.Visibility = options.Colors == GlitchColors.Custom ? Visibility.Visible : Visibility.Collapsed;
+        return Stack(
+            Choice("Shows", Enum.GetValues<GlitchContent>(), options.Content, value => { options.Content = value; app.QueueSave(); },
+                value => value == GlitchContent.Artwork ? "Album cover" : "Song title"),
+            Choice("Distortion", new[] { subtle, medium, heavy }, options.Intensity < .46 ? subtle : options.Intensity < .83 ? medium : heavy,
+                value => { options.Intensity = value; app.QueueSave(); }, value => value == subtle ? "Subtle" : value == heavy ? "Heavy" : "Medium"),
+            Choice("Accent colors", Enum.GetValues<GlitchColors>(), options.Colors, value =>
+            {
+                options.Colors = value;
+                accent.Visibility = value == GlitchColors.Custom ? Visibility.Visible : Visibility.Collapsed;
+                app.ApplyChanges();
+            }, value => value switch { GlitchColors.Album => "Album cover", GlitchColors.Visualizer => "Match the visualizer", _ => "Custom" }),
+            accent,
+            Range("Music response", 0, 3, options.MusicResponse, value => { options.MusicResponse = value; app.QueueSave(); }),
+            Check("Scanlines", options.Scanlines, value => { options.Scanlines = value; app.QueueSave(); }),
+            Choice("After playback stops", Enum.GetValues<GlitchIdle>(), options.Idle, value => { options.Idle = value; app.QueueSave(); },
+                value => value switch { GlitchIdle.Keep => "Keep visible", GlitchIdle.Dim => "Dim", _ => "Hide" }),
+            Button("Reset Glitch Box look", () => ResetWidgetLook(() => Scene.Glitch = new GlitchOptions())));
+    }
+
+    void ResetWidgetLook(Action resetOptions)
+    {
+        resetOptions();
+        app.ApplyChanges();
+        ReloadPage();
+    }
+
+    UIElement ColorInput(string label, string current, Action<string> save) =>
+        Entry(label, current, value =>
         {
             var color = value.Trim();
             if (color.Length != 7 || color[0] != '#' || !color.Skip(1).All(Uri.IsHexDigit))
@@ -448,7 +518,6 @@ internal sealed class Dashboard : Window
             save(color);
             app.ApplyChanges();
         }, "Apply");
-    }
 
     UIElement SizeEditor(WidgetOptions options)
     {
@@ -657,12 +726,36 @@ internal sealed class Dashboard : Window
         return page;
     }
 
+    StackPanel BuildAbout()
+    {
+        var version = typeof(App).Assembly.GetName().Version?.ToString(3);
+        var page = Stack(Heading("About Sada", $"Desktop audio studio · Version {version}"));
+        var credit = Text("Built by Abood", 22, Paper, true);
+        credit.Margin = new Thickness(0, 0, 0, 12);
+        var github = Button("GitHub · @Abood03  ↗", () =>
+        {
+            try { Process.Start(new ProcessStartInfo(DeveloperProfile) { UseShellExecute = true }); }
+            catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+            {
+                app.SetStatus("Could not open the GitHub profile in the default browser.");
+            }
+        }, true);
+        github.HorizontalAlignment = HorizontalAlignment.Left;
+        github.ToolTip = DeveloperProfile;
+        page.Children.Add(Card(Stack(credit, github)));
+        return page;
+    }
+
     internal void Render(AudioFrame frame)
     {
-        if (preview != null) { preview.Frame = frame; preview.InvalidateVisual(); }
-        scenePreview?.Render(frame);
-        widgetPreview?.Render(frame, new Point(double.NaN, double.NaN));
         var now = Environment.TickCount64;
+        if (now - lastPreviewFrame >= 32)
+        {
+            lastPreviewFrame = now;
+            if (preview != null) { preview.Frame = frame; preview.InvalidateVisual(); }
+            scenePreview?.Render(frame);
+            widgetPreview?.Render(frame, new Point(double.NaN, double.NaN));
+        }
         if (now - lastDisplay < 110) return;
         lastDisplay = now;
         UpdateSongTiming();
@@ -790,6 +883,7 @@ internal sealed class Dashboard : Window
         WidgetKind.Flock => "Murmuration",
         WidgetKind.Disc => "Disc player",
         WidgetKind.Neon => "Neon sign",
+        WidgetKind.GlitchBox => "Glitch Box",
         _ => Friendly(kind.ToString())
     };
 

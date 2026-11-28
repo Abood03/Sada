@@ -31,17 +31,19 @@ The PowerShell runner prints `PASS` results and stops on the first failure. Rend
 | `YouTubeBridge` | Local message validation and tracking playback across independent tabs and connections. |
 | `VisualizerMotion` | Blending changes to modes, appearance, and direction, including preserving the outgoing Waterfall drawing. |
 | `NeonRendering` | Cover color changes, unlit glass after playback stops, gradual relighting, reactive glow, and Arabic and English text. |
-| `FullNeon` | Independent full-screen visibility and bounded placement that persists. |
+| `GlitchRendering` | Album art and title fallback, rendering during a glitch burst, and reduced motion. |
+| `FullNeon` | Independent full-screen visibility and bounded placement for Neon Sign and Glitch Box. |
 | Browser extension | Sender validation, timing, pause, seeking, buffering, rate, ad detection, and tab lifecycle with simulated browser state. |
 
 ## Check the portable build on Windows
 
 <details open>
-<summary>Desktop scenes and Neon Sign</summary>
+<summary>Desktop scenes, Neon Sign, and Glitch Box</summary>
 
 1. Open **Edit desktop scene** from Sada's tray menu. Preview a template and move the cover and lyrics. Select **Cancel** and confirm that your arrangement returns.
 2. With a second display available, save a scene there and restart Sada to check the position. Then try the same scene with the display disconnected and check the primary-screen fallback.
 3. Enable **Neon sign** on the desktop and in full screen. Play tracks with distinct cover colors, pause, and resume. Look for a palette change, visible unlit glass, and relighting. Move the sign in full screen and verify that the desktop position is independent.
+4. Enable **Glitch Box** and switch tracks with and without cover art. Try the distortion presets and pause to check the selected idle behavior. Enable it in full screen and move it without changing the desktop position.
 
 </details>
 

@@ -115,6 +115,7 @@ internal static class SceneLayout
         WidgetKind.Clock => (.74, .10),
         WidgetKind.Lyrics => (.64, .88),
         WidgetKind.Media or WidgetKind.Cassette or WidgetKind.Disc or WidgetKind.Neon => (.88, .72),
+        WidgetKind.GlitchBox => (.09, .57),
         WidgetKind.Calendar or WidgetKind.Weather => (.31, .20),
         WidgetKind.System or WidgetKind.Disks => (.28, .70),
         _ => (.50, .50)

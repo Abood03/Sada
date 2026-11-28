@@ -2,7 +2,7 @@
 
 [Home](../README.md) · [Features](features.md) · [Roadmap](roadmap.md) · [Testing](testing.md)
 
-Sada 1.4.1 is a Windows desktop application built with C#, .NET 10, and WPF. The portable release targets `win-x64`. Playback metadata and sound arrive through independent paths, so the visualizer can respond to Windows audio even when the player does not expose track details.
+Sada is a Windows desktop application built with C#, .NET 10, and WPF. The portable release targets `win-x64`. Playback metadata and sound arrive through independent paths, so the visualizer can respond to Windows audio even when the player does not expose track details.
 
 ```mermaid
 flowchart TD
@@ -28,7 +28,7 @@ flowchart TD
 | **Playback** reads track metadata, cover art, position, and supported controls through Windows media sessions. The optional browser bridge provides a YouTube video ID and playhead. | [MediaService.cs](../MediaService.cs), [App.YouTube.cs](../App.YouTube.cs), [YouTubeBridge.cs](../YouTubeBridge.cs), [YouTubeTrack.cs](../YouTubeTrack.cs) |
 | **Audio** samples the output or selected microphone. The audio frame supplies level, spectrum and beat data. Output cues can also inform adaptive lyric timing. | [AudioEngine.cs](../AudioEngine.cs), [SongSync.cs](../SongSync.cs) |
 | **Lyrics** loads a provider or local file, estimates missing word timings, and displays the result. Lyrics Studio manages recording-specific edits. | [MediaService.cs](../MediaService.cs), [App.LyricsStudio.cs](../App.LyricsStudio.cs), [LyricRecording.cs](../LyricRecording.cs), [LyricsStudio.cs](../LyricsStudio.cs), [LyricFlow.cs](../LyricFlow.cs), [LyricText.cs](../LyricText.cs) |
-| **Widgets and full screen** render audio, cover palettes, text, and desktop effects. The full-screen Neon Sign has its own position within the active scene. | [DesktopInterop.cs](../DesktopInterop.cs), [DesktopWidget.cs](../DesktopWidget.cs), [WidgetView.cs](../WidgetView.cs), [Visualizer.cs](../Visualizer.cs), [AlbumPalette.cs](../AlbumPalette.cs), [EnvironmentView.cs](../EnvironmentView.cs), [Extras.cs](../Extras.cs), [NeonSign.cs](../NeonSign.cs), [FullNeonOverlay.cs](../FullNeonOverlay.cs) |
+| **Widgets and full screen** render audio, cover palettes, text, and desktop effects. Neon Sign and Glitch Box each save a separate full-screen position within the active scene. | [DesktopInterop.cs](../DesktopInterop.cs), [DesktopWidget.cs](../DesktopWidget.cs), [WidgetView.cs](../WidgetView.cs), [Visualizer.cs](../Visualizer.cs), [AlbumPalette.cs](../AlbumPalette.cs), [EnvironmentView.cs](../EnvironmentView.cs), [Extras.cs](../Extras.cs), [NeonSign.cs](../NeonSign.cs), [GlitchBox.cs](../GlitchBox.cs), [FullWidgetOverlay.cs](../FullWidgetOverlay.cs) |
 | **Utility widgets** read local system usage, storage, the calendar, listening history, and weather. | [DesktopData.cs](../DesktopData.cs) |
 
 <details>

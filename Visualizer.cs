@@ -41,15 +41,23 @@ public sealed class Visualizer : FrameworkElement
     private const int HistoryLength = 44;
     private const int ColorSteps = 32;
     private const int AlphaSteps = 16;
+    private const int MaximumCount = 120;
+    private const int HaloRippleSegments = 100;
+    private const int HaloPenCacheCapacity = 4096;
+    private const double HaloPenThicknessSteps = 16;
     private const int MaximumFadingLayers = 2;
     private static readonly TimeSpan TransitionDuration = TimeSpan.FromMilliseconds(220);
     private const double Tau = Math.PI * 2;
+    private static readonly Vector[] HaloRippleDirections = GetHaloRippleDirections();
     private readonly record struct Appearance(VisualMode Mode, VisualDirection Direction, VisualPalette Palette,
         VisualAtmosphere Atmosphere, string? CustomColor, string? CustomAccent, AlbumPalette? Artwork);
     private readonly float[] bands = new float[BandCount];
     private readonly float[][] history = new float[HistoryLength][];
     private readonly SolidColorBrush[,] colors = new SolidColorBrush[ColorSteps, AlphaSteps];
     private readonly Color[] gradient = new Color[ColorSteps];
+    private readonly Dictionary<(int Color, int Alpha, int Thickness), Pen> haloPens = new();
+    private readonly RadialGradientBrush?[,] mistBrushes = new RadialGradientBrush?[4, 256];
+    private readonly Vector[] haloSpokeDirections = new Vector[MaximumCount];
     private readonly int[] waterfallPixels = new int[BandCount * HistoryLength];
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private readonly List<DrawingGroup> fadingLayers = new(MaximumFadingLayers);
@@ -72,6 +80,7 @@ public sealed class Visualizer : FrameworkElement
     private double barWidth;
     private double glow;
     private int count;
+    private int haloSpokeCount;
 
     public Visualizer()
     {
@@ -168,7 +177,7 @@ public sealed class Visualizer : FrameworkElement
         var paletteChanged = UpdatePalette();
         var historyChanged = UpdateMotion();
         var opacity = Limit(Settings.Opacity, 0, 1, 1);
-        count = Math.Clamp(Settings.Count, 8, 120);
+        count = Math.Clamp(Settings.Count, 8, MaximumCount);
         barWidth = Limit(Settings.Thickness, .05, 1, .66);
         glow = Limit(Settings.Glow, 0, 1, .45);
 
@@ -198,7 +207,8 @@ public sealed class Visualizer : FrameworkElement
         {
             var center = new Point(ActualWidth / 2, ActualHeight / 2);
             var radius = Math.Min(ActualWidth, ActualHeight) * .205;
-            drawing.DrawEllipse(ringArtworkBrush, PenFor(.54, .56, 1.2), center, radius, radius);
+            var edge = Settings.Mode == VisualMode.Halo ? HaloPenFor(.54, .56, 1.2) : PenFor(.54, .56, 1.2);
+            drawing.DrawEllipse(ringArtworkBrush, edge, center, radius, radius);
         }
         drawing.Pop();
     }
@@ -251,6 +261,8 @@ public sealed class Visualizer : FrameworkElement
         previousCustomColor = Settings.CustomColor;
         previousCustomAccent = Settings.CustomAccent;
         previousArtworkColors = ArtworkColors;
+        haloPens.Clear();
+        Array.Clear(mistBrushes);
         var stops = ArtworkColors is { } art ? (art.First, art.Middle, art.Last) : ResolvePalette(Settings);
 
         for (var i = 0; i < ColorSteps; i++)
@@ -357,28 +369,59 @@ public sealed class Visualizer : FrameworkElement
         var scale = Math.Min(width, height);
         var radius = scale * (.267 + beat * .016);
         var ringThickness = Math.Max(.8, scale * (.002 + barWidth * .006));
-        drawing.DrawEllipse(null, PenFor(.27, .27, ringThickness), origin, radius * .93, radius * .93);
-        drawing.DrawEllipse(null, PenFor(.78, .17, 1), origin, scale * .446, scale * .446);
+        drawing.DrawEllipse(null, HaloPenFor(.27, .27, ringThickness), origin, radius * .93, radius * .93);
+        drawing.DrawEllipse(null, HaloPenFor(.78, .17, 1), origin, scale * .446, scale * .446);
 
+        if (haloSpokeCount != count)
+        {
+            for (var i = 0; i < count; i++)
+                haloSpokeDirections[i] = UnitDirection(i / (double)count * Tau - Math.PI / 2);
+            haloSpokeCount = count;
+        }
+
+        var (sin, cos) = Math.SinCos(phase * .07);
+        var spokeThickness = Math.Max(.55, Tau * radius / count * barWidth * .7);
         for (var i = 0; i < count; i++)
         {
             var around = i / (double)count;
             var band = FrequencyPosition(around);
             var level = Spectrum(band);
-            var angle = around * Tau - Math.PI / 2 + phase * .07;
-            var start = Polar(origin, angle, radius);
-            var end = Polar(origin, angle, radius + scale * (.016 + level * .19));
-            var thickness = Math.Max(.55, Tau * radius / count * barWidth * .7);
-            DrawStroke(drawing, start, end, band, .24 + .74 * level, thickness);
+            var spoke = haloSpokeDirections[i];
+            var direction = new Vector(spoke.X * cos - spoke.Y * sin, spoke.X * sin + spoke.Y * cos);
+            var start = origin + direction * radius;
+            var end = origin + direction * (radius + scale * (.016 + level * .19));
+            drawing.DrawLine(HaloPenFor(band, .24 + .74 * level, spokeThickness), start, end);
         }
 
-        var ripple = Path(100, i =>
+        var ripple = new StreamGeometry();
+        var channel = Frame?.Left;
+        var gain = Limit(Settings.Sensitivity, .1, 4, 1);
+        using (var stream = ripple.Open())
         {
-            var angle = i * Tau / 99;
-            var signal = Wave(angle / Tau, false);
-            return Polar(origin, angle, radius * .82 + signal * scale * .066);
-        }, true);
-        drawing.DrawGeometry(null, PenFor(.48, .44 + energy * .48, ringThickness * .82), ripple);
+            for (var i = 0; i < HaloRippleSegments; i++)
+            {
+                var signal = Math.Clamp(Sample(channel, i / (double)(HaloRippleSegments - 1)) * gain, -1, 1);
+                var point = origin + HaloRippleDirections[i] * (radius * .82 + signal * scale * .066);
+                if (i == 0) stream.BeginFigure(point, true, true);
+                else stream.LineTo(point, true, false);
+            }
+        }
+        ripple.Freeze();
+        drawing.DrawGeometry(null, HaloPenFor(.48, .44 + energy * .48, ringThickness * .82), ripple);
+    }
+
+    private static Vector[] GetHaloRippleDirections()
+    {
+        var directions = new Vector[HaloRippleSegments];
+        for (var i = 0; i < directions.Length; i++)
+            directions[i] = UnitDirection(i * Tau / (directions.Length - 1));
+        return directions;
+    }
+
+    private static Vector UnitDirection(double angle)
+    {
+        var (sin, cos) = Math.SinCos(angle);
+        return new Vector(cos, sin);
     }
 
     private void DrawWaveform(DrawingContext drawing, double width, double height)
@@ -603,7 +646,7 @@ public sealed class Visualizer : FrameworkElement
                 {
                     var angle = i * 1.9 + phase * (.21 + i * .044);
                     var position = new Point(origin.X + Math.Cos(angle) * width * .26, origin.Y + Math.Sin(angle) * height * .29);
-                    var brush = SoftBrush(gradient[ColorIndex(i / 3.0)], (.11 + energy * .4) * intensity);
+                    var brush = MistBrush(i, (.11 + energy * .4) * intensity);
                     drawing.DrawEllipse(brush, null, position, width * (.21 + energy * .10), height * (.27 + energy * .13));
                 }
                 break;
@@ -639,26 +682,51 @@ public sealed class Visualizer : FrameworkElement
     private void DrawStroke(DrawingContext drawing, Point from, Point to, double shade, double opacity, double thickness) =>
         drawing.DrawLine(PenFor(shade, opacity, thickness), from, to);
 
-    private Pen PenFor(double shade, double opacity, double thickness)
+    private Pen PenFor(double shade, double opacity, double thickness) =>
+        RoundedPen(Brush(shade, opacity), thickness);
+
+    private Pen HaloPenFor(double shade, double opacity, double thickness)
     {
-        return new Pen(Brush(shade, opacity), thickness)
-        {
-            StartLineCap = PenLineCap.Round,
-            EndLineCap = PenLineCap.Round,
-            LineJoin = PenLineJoin.Round
-        };
+        var color = ColorIndex(shade);
+        var alpha = AlphaIndex(opacity);
+        var width = (int)Math.Round(thickness * HaloPenThicknessSteps);
+        var key = (color, alpha, width);
+        if (haloPens.TryGetValue(key, out var pen)) return pen;
+
+        // Subpixel width buckets allow the pulsing spokes to reuse immutable pens.
+        pen = RoundedPen(colors[color, alpha], width / HaloPenThicknessSteps);
+        pen.Freeze();
+        if (haloPens.Count == HaloPenCacheCapacity) haloPens.Clear();
+        haloPens.Add(key, pen);
+        return pen;
     }
 
+    private static Pen RoundedPen(SolidColorBrush brush, double thickness) => new(brush, thickness)
+    {
+        StartLineCap = PenLineCap.Round,
+        EndLineCap = PenLineCap.Round,
+        LineJoin = PenLineJoin.Round
+    };
+
     private SolidColorBrush Brush(double shade, double opacity) =>
-        colors[ColorIndex(shade), (int)Math.Round(Math.Clamp(opacity, 0, 1) * (AlphaSteps - 1))];
+        colors[ColorIndex(shade), AlphaIndex(opacity)];
 
     private static int ColorIndex(double fraction) => (int)Math.Round(Math.Clamp(fraction, 0, 1) * (ColorSteps - 1));
 
-    private static RadialGradientBrush SoftBrush(Color color, double alpha)
+    private static int AlphaIndex(double fraction) => (int)Math.Round(Math.Clamp(fraction, 0, 1) * (AlphaSteps - 1));
+
+    private RadialGradientBrush MistBrush(int spot, double opacity)
     {
-        return new RadialGradientBrush(
-            Color.FromArgb((byte)(Math.Clamp(alpha, 0, 1) * 255), color.R, color.G, color.B),
+        var alpha = (byte)(Math.Clamp(opacity, 0, 1) * 255);
+        if (mistBrushes[spot, alpha] is { } brush) return brush;
+
+        var color = gradient[ColorIndex(spot / 3.0)];
+        brush = new RadialGradientBrush(
+            Color.FromArgb(alpha, color.R, color.G, color.B),
             Color.FromArgb(0, color.R, color.G, color.B));
+        brush.Freeze();
+        mistBrushes[spot, alpha] = brush;
+        return brush;
     }
 
     private static StreamGeometry Path(int segments, Func<int, Point> pointAt, bool closed = false)

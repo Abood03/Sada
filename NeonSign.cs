@@ -14,11 +14,12 @@ internal sealed class NeonSign : FrameworkElement
     const double TrackChangeMilliseconds = 335;
     const double IdleGraceMilliseconds = 6000;
     const double IdleFadeMilliseconds = 280;
+    const double MaxIgnitionMilliseconds = 1050;
     const int SpectrumZones = 10;
 
-    static readonly Typeface Script = new("Segoe Print");
-    static readonly Typeface Block = new(new FontFamily("Bahnschrift"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
-    static readonly Typeface Tall = new(new FontFamily("Bahnschrift Condensed"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Condensed);
+    static readonly Typeface Script = new("Segoe Script");
+    static readonly Typeface Block = new(new FontFamily("Segoe UI Variable Display, Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+    static readonly Typeface Tall = new(new FontFamily("Bahnschrift Condensed, Bahnschrift"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.ExtraCondensed);
     static readonly Typeface ArtistTypeface = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
     static readonly Typeface NoteTypeface = new("Segoe UI Symbol");
     static readonly Color DefaultTitle = Color.FromRgb(112, 248, 204);
@@ -32,16 +33,23 @@ internal sealed class NeonSign : FrameworkElement
     {
         internal Color Title { get; } = title;
         internal Color Artist { get; } = artist;
-        internal SolidColorBrush TitleCore { get; } = Brush(Lighten(title));
-        internal SolidColorBrush ArtistCore { get; } = Brush(Lighten(artist));
-        internal Pen Bloom { get; } = Tube(title, .035, 28);
-        internal Pen Outer { get; } = Tube(title, .13, 15);
-        internal Pen Inner { get; } = Tube(title, .34, 7);
-        internal Pen Edge { get; } = Tube(title, .79, 2.2);
-        internal Pen ArtistGlow { get; } = Tube(artist, .34, 4);
+        internal TubeInk TitleInk { get; } = new(title, 1);
+        internal TubeInk ArtistInk { get; } = new(artist, .66);
         internal Pen Lead { get; } = Tube(title, .55, 1.4);
-        internal SolidColorBrush TitleGlass { get; } = Brush(Glass(title));
-        internal SolidColorBrush ArtistGlass { get; } = Brush(Glass(artist));
+    }
+
+    sealed class TubeInk(Color hue, double scale)
+    {
+        internal Pen[] Halo { get; } =
+        [
+            Tube(hue, .028, 39 * scale), Tube(hue, .048, 31 * scale), Tube(hue, .077, 24 * scale),
+            Tube(hue, .12, 17 * scale), Tube(hue, .18, 11 * scale), Tube(hue, .30, 5.6 * scale)
+        ];
+        internal SolidColorBrush Glass { get; } = Brush(NeonSign.Glass(hue));
+        internal LinearGradientBrush Filament { get; } = GlowFilament(hue);
+        internal Pen Shell { get; } = Tube(Mix(hue, Colors.Black, .28), .90, 2.5 * scale);
+        internal Pen GlassEdge { get; } = Tube(Mix(hue, Colors.White, .54), .63, .85 * scale);
+        internal Pen Flare { get; } = Tube(Mix(hue, Colors.White, .36), .50, 5.4 * scale);
     }
 
     static readonly Pen GlassRim = Tube(Color.FromRgb(18, 22, 28), .84, 2.3);
@@ -58,6 +66,8 @@ internal sealed class NeonSign : FrameworkElement
     NeonReaction reaction;
     NeonFlicker flicker;
     double strength;
+    double glowIntensity = 1;
+    bool glassTrim = true;
     double clock = double.NaN;
     double switchedAt;
     double fadingAt = double.NaN;
@@ -71,6 +81,7 @@ internal sealed class NeonSign : FrameworkElement
     double charge;
     double flare;
     double level;
+    double surgeDip;
     double flickerOpacity = 1;
     int flickerIndex = -1;
     int cutoutIndex = -1;
@@ -116,7 +127,7 @@ internal sealed class NeonSign : FrameworkElement
             incoming = updated;
             if (!animate || displayed is null || updated == displayed || displayed?.Track == updated.Track)
             {
-                if (displayed != updated) ShowIncoming(displayed?.Track == updated.Track && !resume ? now - 880 : now);
+                if (displayed != updated) ShowIncoming(displayed?.Track == updated.Track && !resume ? now - MaxIgnitionMilliseconds : now);
                 fadingAt = double.NaN;
             }
             else if (double.IsNaN(fadingAt))
@@ -141,7 +152,7 @@ internal sealed class NeonSign : FrameworkElement
                 fadingAt = double.NaN;
             }
             if (animate && resume) switchedAt = now;
-            double revealTime = Math.Clamp((title?.Prefixes.Length ?? displayed?.Title.Length ?? 0) * 28, 210, 880);
+            double revealTime = Math.Clamp((title?.Prefixes.Length ?? displayed?.Title.Length ?? 0) * 36, 280, MaxIgnitionMilliseconds);
             nextReveal = animate ? Math.Clamp((now - switchedAt) / revealTime, 0, 1) : 1;
         }
 
@@ -174,8 +185,12 @@ internal sealed class NeonSign : FrameworkElement
     bool UpdateReactionOptions(NeonOptions options)
     {
         var nextStrength = double.IsFinite(options.ReactionStrength) ? Math.Clamp(options.ReactionStrength, 0, 2) : 1;
-        bool changed = options.Reaction != reaction || options.Flicker != flicker || nextStrength != strength;
+        var nextGlow = double.IsFinite(options.GlowIntensity) ? Math.Clamp(options.GlowIntensity, 0, 2) : 1;
+        bool changed = options.Reaction != reaction || options.Flicker != flicker || nextStrength != strength ||
+            nextGlow != glowIntensity || glassTrim != options.GlassTrim;
         (reaction, flicker, strength) = (options.Reaction, options.Flicker, nextStrength);
+        (glowIntensity, glassTrim) = (nextGlow, options.GlassTrim);
+        if (reaction != NeonReaction.Surge) surgeDip = 0;
         return changed;
     }
 
@@ -192,8 +207,11 @@ internal sealed class NeonSign : FrameworkElement
         if (reaction == NeonReaction.Surge)
         {
             double nextLevel = Approach(level, playing ? Signal(frame.Level) : 0, elapsed, 125);
-            changed = Math.Abs(nextLevel - level) > .0001;
+            double nextDip = playing && requestedFlare >= .76 && previousBeat < .76
+                ? 1 : Approach(surgeDip, 0, elapsed, 115);
+            changed = Math.Abs(nextLevel - level) > .0001 || Math.Abs(nextDip - surgeDip) > .0001;
             level = nextLevel;
+            surgeDip = nextDip;
         }
         if (playing && reaction == NeonReaction.Equalizer && strength > 0)
         {
@@ -250,17 +268,19 @@ internal sealed class NeonSign : FrameworkElement
         if (title is null) ArrangeSign(sign);
         if (title is null) return;
 
-        var response = reaction == NeonReaction.Surge ? .84 + .16 * Math.Clamp(level * strength, 0, 1) : 1;
+        var response = reaction == NeonReaction.Surge ? SurgePower() : 1;
         var intensity = fade * charge * response;
         DrawGlass(drawing, 1 - intensity * Ease(reveal));
         if (intensity <= .001) return;
 
+        var audioFlare = Math.Clamp(flare * strength, 0, 1);
         drawing.PushOpacity(intensity * Ease(reveal * 3));
         drawing.DrawLine(tubes.Lead, leadTop, leadBottom);
         if (note is { } symbol)
         {
             drawing.PushTransform(symbol.Translate);
-            DrawTube(drawing, symbol.Text, Math.Clamp(flare * strength, 0, 1));
+            var noteFlare = Math.Max(audioFlare, .82 * Arc(reveal * 3.5));
+            DrawTube(drawing, symbol.Text, tubes.TitleInk, noteFlare);
             drawing.Pop();
         }
         drawing.Pop();
@@ -271,10 +291,11 @@ internal sealed class NeonSign : FrameworkElement
         drawing.Pop();
         drawing.Pop();
 
-        if (artist is not { } credit || reveal < .24) return;
-        drawing.PushOpacity(intensity * Ease((reveal - .24) / .76));
+        double artistReveal = Math.Clamp((reveal - .35) / .65, 0, 1);
+        if (artist is not { } credit || artistReveal <= 0) return;
+        drawing.PushOpacity(intensity * (.82 + .18 * Ease(artistReveal)));
         drawing.PushTransform(credit.Translate);
-        drawing.DrawGeometry(tubes.ArtistCore, tubes.ArtistGlow, credit.Text);
+        DrawProgress(drawing, credit, tubes.ArtistInk, artistReveal, audioFlare * .35);
         drawing.Pop();
         drawing.Pop();
     }
@@ -284,41 +305,64 @@ internal sealed class NeonSign : FrameworkElement
         if (opacity <= .001 || title is null) return;
         drawing.PushOpacity(opacity);
         drawing.DrawLine(OffLead, leadTop, leadBottom);
-        DrawUnlitTube(drawing, title, tubes.TitleGlass);
-        if (artist is { } credit) DrawUnlitTube(drawing, credit, tubes.ArtistGlass);
-        if (note is { } symbol) DrawUnlitTube(drawing, symbol, tubes.TitleGlass);
+        DrawUnlitTube(drawing, title, tubes.TitleInk);
+        if (artist is { } credit) DrawUnlitTube(drawing, credit, tubes.ArtistInk);
+        if (note is { } symbol) DrawUnlitTube(drawing, symbol, tubes.TitleInk);
         drawing.Pop();
     }
 
-    static void DrawUnlitTube(DrawingContext drawing, WordArt art, Brush glass)
+    void DrawUnlitTube(DrawingContext drawing, WordArt art, TubeInk ink)
     {
         drawing.PushTransform(art.Translate);
-        drawing.DrawGeometry(glass, GlassRim, art.Text);
-        drawing.DrawGeometry(null, GlassEdge, art.Text);
+        drawing.DrawGeometry(ink.Glass, GlassRim, art.Text);
+        if (glassTrim) drawing.DrawGeometry(null, GlassEdge, art.Text);
         drawing.Pop();
     }
 
     void DrawTitleProgress(DrawingContext drawing, WordArt text)
     {
-        double wholeSignFlare = reaction is NeonReaction.Flare or NeonReaction.Surge ? Math.Clamp(flare * strength, 0, 1) : 0;
+        double wholeSignFlare = reaction switch
+        {
+            NeonReaction.Flare => Math.Clamp(flare * strength, 0, 1),
+            NeonReaction.Surge => .45 * Math.Clamp(level * strength, 0, 1) * (1 - surgeDip),
+            _ => 0
+        };
         if (reveal >= 1 || text.Prefixes.Length == 0)
         {
             DrawLitTitle(drawing, text, wholeSignFlare);
             return;
         }
+        DrawProgress(drawing, text, tubes.TitleInk, reveal, wholeSignFlare);
+    }
 
-        double position = reveal * text.Prefixes.Length;
+    void DrawProgress(DrawingContext drawing, WordArt text, TubeInk ink, double progress, double pulse)
+    {
+        if (progress >= 1 || text.Prefixes.Length == 0)
+        {
+            DrawTube(drawing, text.Text, ink, pulse);
+            return;
+        }
+        double position = progress * text.Prefixes.Length;
         int complete = (int)position;
         if (complete > 0)
         {
             drawing.PushClip(text.Prefixes[complete - 1]);
-            DrawTube(drawing, text.Text, wholeSignFlare);
+            DrawTube(drawing, text.Text, ink, pulse);
             drawing.Pop();
         }
-        if (complete >= text.Clusters.Length || position - complete <= .001) return;
-        drawing.PushOpacity(Ease(position - complete));
+        double through = position - complete;
+        if (complete >= text.Clusters.Length || through <= .001) return;
+
+        double arc = Arc(through);
+        drawing.PushOpacity(Math.Clamp(Ease(through) * (1 - .18 * arc) + .31 * arc, 0, 1));
         drawing.PushClip(text.Clusters[complete]);
-        DrawTube(drawing, text.Text, wholeSignFlare);
+        DrawTube(drawing, text.Text, ink, Math.Max(pulse, arc));
+        if (arc > .02)
+        {
+            drawing.PushOpacity(.42 * arc);
+            drawing.DrawGeometry(null, ink.Flare, text.Text);
+            drawing.Pop();
+        }
         drawing.Pop();
         drawing.Pop();
     }
@@ -330,24 +374,42 @@ internal sealed class NeonSign : FrameworkElement
             if (cutoutIndex != flickerIndex)
             {
                 var bounds = text.Text.Bounds;
-                bounds.Inflate(14, 14);
+                bounds.Inflate(21, 21);
                 cutout = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(bounds), text.Clusters[flickerIndex]);
                 cutout.Freeze();
                 cutoutIndex = flickerIndex;
             }
             drawing.PushClip(cutout!);
-            DrawTube(drawing, text.Text, wholeSignFlare);
+            DrawMusicResponse(drawing, text, wholeSignFlare);
             drawing.Pop();
             drawing.PushOpacity(flickerOpacity);
             drawing.PushClip(text.Clusters[flickerIndex]);
-            DrawTube(drawing, text.Text, wholeSignFlare);
+            DrawMusicResponse(drawing, text, wholeSignFlare);
             drawing.Pop();
             drawing.Pop();
             return;
         }
-        DrawTube(drawing, text.Text, wholeSignFlare);
-        if (charge < .21 || strength == 0) return;
-        if (reaction == NeonReaction.Chase && chase < 1 && text.Clusters.Length > 0)
+        DrawMusicResponse(drawing, text, wholeSignFlare);
+    }
+
+    void DrawMusicResponse(DrawingContext drawing, WordArt text, double wholeSignFlare)
+    {
+        bool reactive = charge >= .21 && strength > 0;
+        if (reactive && reaction == NeonReaction.Equalizer && text.Zones.Length > 0)
+        {
+            var influence = Math.Min(1, strength);
+            drawing.PushOpacity(1 - .69 * influence);
+            DrawTube(drawing, text.Text, tubes.TitleInk, wholeSignFlare);
+            drawing.Pop();
+            for (int i = 0; i < text.Zones.Length; i++)
+            {
+                var band = spectrum[i * (SpectrumZones - 1) / Math.Max(1, text.Zones.Length - 1)];
+                DrawPulse(drawing, text.Text, text.Zones[i], 1.25 * influence * Math.Clamp(band * strength, 0, 1));
+            }
+            return;
+        }
+        DrawTube(drawing, text.Text, tubes.TitleInk, wholeSignFlare);
+        if (reactive && reaction == NeonReaction.Chase && chase < 1 && text.Clusters.Length > 0)
         {
             double position = Ease(chase) * Math.Max(0, text.Clusters.Length - 1);
             int cluster = (int)position;
@@ -355,31 +417,33 @@ internal sealed class NeonSign : FrameworkElement
             if (cluster + 1 < text.Clusters.Length)
                 DrawPulse(drawing, text.Text, text.Clusters[cluster + 1], (position - cluster) * strength);
         }
-        else if (reaction == NeonReaction.Equalizer)
-        {
-            for (int i = 0; i < text.Zones.Length; i++)
-                DrawPulse(drawing, text.Text, text.Zones[i], spectrum[i * (SpectrumZones - 1) / Math.Max(1, text.Zones.Length - 1)] * strength);
-        }
     }
+
+    double SurgePower() =>
+        (1 - .34 * Math.Min(strength, 1) * (1 - Math.Clamp(level * strength, 0, 1))) *
+        (1 - Math.Min(.48, .39 * strength) * surgeDip);
 
     void DrawPulse(DrawingContext drawing, Geometry path, Geometry clip, double intensity)
     {
         if (intensity < .025) return;
         drawing.PushOpacity(Math.Clamp(intensity * .65, 0, .84));
         drawing.PushClip(clip);
-        drawing.DrawGeometry(tubes.TitleCore, tubes.Inner, path);
+        drawing.DrawGeometry(tubes.TitleInk.Filament, tubes.TitleInk.Flare, path);
         drawing.Pop();
         drawing.Pop();
     }
 
-    void DrawTube(DrawingContext drawing, Geometry path, double pulse)
+    void DrawTube(DrawingContext drawing, Geometry path, TubeInk ink, double pulse)
     {
-        drawing.PushOpacity(.62 + .38 * pulse);
-        drawing.DrawGeometry(null, tubes.Bloom, path);
-        drawing.DrawGeometry(null, tubes.Outer, path);
-        drawing.DrawGeometry(null, tubes.Inner, path);
-        drawing.Pop();
-        drawing.DrawGeometry(tubes.TitleCore, tubes.Edge, path);
+        double light = Math.Min(1, glowIntensity * (.53 + .30 * pulse));
+        if (light > .001)
+        {
+            drawing.PushOpacity(light);
+            foreach (var pen in ink.Halo) drawing.DrawGeometry(null, pen, path);
+            drawing.Pop();
+        }
+        drawing.DrawGeometry(ink.Filament, ink.Shell, path);
+        if (glassTrim) drawing.DrawGeometry(null, ink.GlassEdge, path);
     }
 
     void ShowIncoming(double now)
@@ -407,8 +471,9 @@ internal sealed class NeonSign : FrameworkElement
         double noteWidth = sign.ShowNote ? Math.Clamp(ActualWidth * .065, 12, 48) : 0;
         double left = margin + 9 + noteWidth;
         double width = Math.Max(4, ActualWidth - left - margin);
-        double titleSize = Math.Clamp(ActualHeight * .32, 10, 82);
-        double artistSize = Math.Clamp(ActualHeight * .125, 8, 24);
+        double titleRatio = sign.Lettering == NeonLettering.TallCapitals ? .37 : .32;
+        double titleSize = Math.Clamp(ActualHeight * titleRatio, 10, 84);
+        double artistSize = Math.Clamp(ActualHeight * .13, 8, 25);
         double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         bool hasArtist = !string.IsNullOrWhiteSpace(sign.Artist);
         double titleHeight = Math.Max(12, ActualHeight * (hasArtist ? .64 : .84));
@@ -426,27 +491,9 @@ internal sealed class NeonSign : FrameworkElement
         double combined = titlePath.Bounds.Height + gap + (creditPath?.Bounds.Height ?? 0);
         double top = Math.Max(4, (ActualHeight - combined) / 2);
 
-        // Highlight regions come from the fully shaped run, so revealing a cluster
-        // never reshapes neighboring Arabic letters or splits a combining mark.
-        var starts = StringInfo.ParseCombiningCharacters(titleText.Text);
-        var prefixes = new Geometry[starts.Length];
-        var clusters = new Geometry[starts.Length];
-        int ZoneStart(int index, int zoneCount) => index == zoneCount ? titleText.Text.Length : starts[index * starts.Length / zoneCount];
-        for (int i = 0; i < starts.Length; i++)
-        {
-            int end = i + 1 < starts.Length ? starts[i + 1] : titleText.Text.Length;
-            prefixes[i] = Highlight(titleText, 0, end);
-            clusters[i] = Highlight(titleText, starts[i], end - starts[i]);
-        }
-        var zones = new Geometry[Math.Min(SpectrumZones, starts.Length)];
-        for (int i = 0; i < zones.Length; i++)
-        {
-            int start = ZoneStart(i, zones.Length);
-            zones[i] = Highlight(titleText, start, ZoneStart(i + 1, zones.Length) - start);
-        }
-
-        title = Place(titlePath, prefixes, clusters, zones, left, top);
-        if (creditPath is not null) artist = Place(creditPath, [], [], [], left, top + titlePath.Bounds.Height + gap);
+        title = ShapeWords(titleText, titlePath, left, top, withSpectrum: true);
+        if (credit is { } artistText && creditPath is not null)
+            artist = ShapeWords(artistText, creditPath, left, top + titlePath.Bounds.Height + gap, withSpectrum: false);
         if (sign.ShowNote)
         {
             var symbol = Fit("♪", NoteTypeface, Math.Clamp(titleSize * .75, 8, 38), noteWidth,
@@ -456,6 +503,36 @@ internal sealed class NeonSign : FrameworkElement
         }
         leadTop = new Point(margin, top + 3);
         leadBottom = new Point(margin, top + combined - 3);
+    }
+
+    static WordArt ShapeWords(FittedText text, Geometry path, double x, double y, bool withSpectrum)
+    {
+        // Read the shaped run's regions to keep joined letters and diacritics intact.
+        var starts = StringInfo.ParseCombiningCharacters(text.Text);
+        var groups = new List<(int Start, int End, Geometry Clip)>(starts.Length);
+        for (int i = 0; i < starts.Length; i++)
+        {
+            int start = starts[i];
+            if (char.IsWhiteSpace(text.Text[start])) continue;
+            int end = i + 1 < starts.Length ? starts[i + 1] : text.Text.Length;
+            var clip = Highlight(text, start, end - start);
+            if (!clip.Bounds.IsEmpty) groups.Add((start, end, clip));
+        }
+        var prefixes = new Geometry[groups.Count];
+        var clusters = new Geometry[groups.Count];
+        for (int i = 0; i < groups.Count; i++)
+        {
+            prefixes[i] = Highlight(text, 0, groups[i].End);
+            clusters[i] = groups[i].Clip;
+        }
+        var zones = new Geometry[withSpectrum ? Math.Min(SpectrumZones, groups.Count) : 0];
+        for (int i = 0; i < zones.Length; i++)
+        {
+            int start = groups[i * groups.Count / zones.Length].Start;
+            int end = groups[(i + 1) * groups.Count / zones.Length - 1].End;
+            zones[i] = Highlight(text, start, end - start);
+        }
+        return Place(path, prefixes, clusters, zones, x, y);
     }
 
     readonly record struct FittedText(string Text, FormattedText Format)
@@ -471,7 +548,7 @@ internal sealed class NeonSign : FrameworkElement
         if (starts.Length > 128) label = label[..starts[128]] + "…";
         var flow = TextDirection(label);
         FormattedText Shape(string value, double points) => new(value, CultureInfo.CurrentUICulture, flow,
-            face, points, DefaultTubes.TitleCore, pixelsPerDip);
+            face, points, Brushes.White, pixelsPerDip);
         var shape = Shape(label, size);
         double measuredWidth = shape.WidthIncludingTrailingWhitespace;
         int lines = allowTwoLines && measuredWidth > width * 1.25 ? 2 : 1;
@@ -519,10 +596,22 @@ internal sealed class NeonSign : FrameworkElement
         return brush;
     }
 
-    static Color Lighten(Color value)
+    static LinearGradientBrush GlowFilament(Color hue)
     {
-        static byte Channel(byte current) => (byte)(current + (255 - current) * .60);
-        return Color.FromRgb(Channel(value.R), Channel(value.G), Channel(value.B));
+        var brush = new LinearGradientBrush { StartPoint = new Point(.15, 0), EndPoint = new Point(.78, 1) };
+        brush.GradientStops.Add(new GradientStop(Mix(hue, Colors.White, .51), 0));
+        brush.GradientStops.Add(new GradientStop(Mix(hue, Colors.White, .89), .25));
+        brush.GradientStops.Add(new GradientStop(Mix(hue, Colors.White, .75), .49));
+        brush.GradientStops.Add(new GradientStop(Mix(hue, Colors.White, .42), .70));
+        brush.GradientStops.Add(new GradientStop(Mix(hue, Colors.White, .65), 1));
+        brush.Freeze();
+        return brush;
+    }
+
+    static Color Mix(Color first, Color second, double amount)
+    {
+        byte Channel(byte from, byte to) => (byte)(from + (to - from) * amount);
+        return Color.FromRgb(Channel(first.R, second.R), Channel(first.G, second.G), Channel(first.B, second.B));
     }
 
     static Color Glass(Color value)
@@ -547,6 +636,8 @@ internal sealed class NeonSign : FrameworkElement
     }
 
     static double Signal(float value) => float.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;
+
+    static double Arc(double through) => Math.Sin(Math.PI * Math.Clamp((through - .06) / .83, 0, 1));
 
     static double Ease(double value)
     {

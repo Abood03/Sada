@@ -7,18 +7,20 @@ using System.Windows.Media;
 
 namespace Sada;
 
-internal sealed class FullNeonOverlay : Canvas
+internal sealed class FullWidgetOverlay : Canvas
 {
     readonly App app;
+    readonly WidgetKind kind;
     readonly Thumb handle;
     WidgetView? sign;
     SceneOptions? dragScene;
     Point dragPointer;
     Point dragOrigin;
 
-    internal FullNeonOverlay(App app)
+    internal FullWidgetOverlay(App app, WidgetKind kind)
     {
         this.app = app;
+        this.kind = kind;
         ClipToBounds = true;
         Visibility = Visibility.Collapsed;
 
@@ -29,7 +31,7 @@ internal sealed class FullNeonOverlay : Canvas
             Cursor = Cursors.SizeAll,
             Template = new ControlTemplate(typeof(Thumb)) { VisualTree = hitArea }
         };
-        AutomationProperties.SetName(handle, "Move full-screen neon sign");
+        AutomationProperties.SetName(handle, $"Move full-screen {Dashboard.WidgetName(kind).ToLowerInvariant()}");
         handle.DragStarted += (_, _) =>
         {
             dragScene = app.Scene;
@@ -47,8 +49,18 @@ internal sealed class FullNeonOverlay : Canvas
             if (!args.Canceled && dragScene is { } scene && ReferenceEquals(scene, app.Scene) && position != dragOrigin)
             {
                 var area = MovementBounds();
-                if (area.Width > 0) scene.FullNeonX = (position.X - area.Left) / area.Width;
-                if (area.Height > 0) scene.FullNeonY = (position.Y - area.Top) / area.Height;
+                var x = area.Width > 0 ? (position.X - area.Left) / area.Width : (double?)null;
+                var y = area.Height > 0 ? (position.Y - area.Top) / area.Height : (double?)null;
+                if (kind == WidgetKind.Neon)
+                {
+                    scene.FullNeonX = x ?? scene.FullNeonX;
+                    scene.FullNeonY = y ?? scene.FullNeonY;
+                }
+                else
+                {
+                    scene.FullGlitchX = x ?? scene.FullGlitchX;
+                    scene.FullGlitchY = y ?? scene.FullGlitchY;
+                }
                 app.QueueSave();
             }
             dragScene = null;
@@ -59,7 +71,7 @@ internal sealed class FullNeonOverlay : Canvas
 
     internal void Apply()
     {
-        var enabled = app.Scene.FullNeon;
+        var enabled = kind == WidgetKind.Neon ? app.Scene.FullNeon : app.Scene.FullGlitchBox;
         Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
         if (!enabled)
         {
@@ -68,18 +80,22 @@ internal sealed class FullNeonOverlay : Canvas
         }
         if (sign is null)
         {
-            sign = new WidgetView(app, WidgetKind.Neon, false) { IsHitTestVisible = false };
+            sign = new WidgetView(app, kind, false) { IsHitTestVisible = false };
             Children.Add(sign);
             Children.Add(handle);
         }
         else sign.Apply();
+        sign.Opacity = Math.Clamp(app.Scene.Widget(kind).Opacity, .08, 1);
         Place();
     }
 
     internal void Render(AudioFrame frame)
     {
         if (Visibility == Visibility.Visible && sign is not null)
+        {
             sign.Render(frame, new Point(double.NaN, double.NaN));
+            handle.IsHitTestVisible = sign.IsMediaWidgetVisible;
+        }
     }
 
     internal void Release() => sign?.Release();
@@ -87,8 +103,20 @@ internal sealed class FullNeonOverlay : Canvas
     void Place()
     {
         if (sign is null || ActualWidth <= 0 || ActualHeight <= 0) return;
-        sign.Width = handle.Width = Math.Min(Math.Clamp(ActualWidth * .43, 280, 620), ActualWidth);
-        sign.Height = handle.Height = Math.Min(Math.Clamp(ActualHeight * .18, 100, 185), ActualHeight);
+        if (kind == WidgetKind.Neon)
+        {
+            sign.Width = handle.Width = Math.Min(Math.Clamp(ActualWidth * .43, 280, 620), ActualWidth);
+            sign.Height = handle.Height = Math.Min(Math.Clamp(ActualHeight * .18, 100, 185), ActualHeight);
+        }
+        else
+        {
+            var options = app.Scene.Widget(kind);
+            double aspect = Math.Clamp(options.Width / Math.Max(1, options.Height), .55, 2.8);
+            double width = Math.Min(Math.Clamp(ActualWidth * .20, 154, 350), ActualWidth);
+            double height = Math.Min(width / aspect, Math.Min(ActualHeight * .45, 360));
+            sign.Width = handle.Width = Math.Min(width, height * aspect);
+            sign.Height = handle.Height = height;
+        }
         var area = MovementBounds();
         if (ReferenceEquals(dragScene, app.Scene))
         {
@@ -97,8 +125,10 @@ internal sealed class FullNeonOverlay : Canvas
         }
 
         var scene = app.Scene;
-        SetPosition(new Point(area.Left + area.Width * Fraction(scene.FullNeonX, .5),
-            area.Top + area.Height * Fraction(scene.FullNeonY, .12)), area);
+        var (x, y) = kind == WidgetKind.Neon
+            ? (Fraction(scene.FullNeonX, .5), Fraction(scene.FullNeonY, .12))
+            : (Fraction(scene.FullGlitchX, .12), Fraction(scene.FullGlitchY, .42));
+        SetPosition(new Point(area.Left + area.Width * x, area.Top + area.Height * y), area);
     }
 
     Rect MovementBounds()

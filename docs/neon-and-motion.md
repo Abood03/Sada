@@ -22,6 +22,15 @@ Neon Sign displays the song title and artist in luminous letters. **Album cover*
 | **Show artist** and **Show music note** | Show or hide the secondary elements. |
 | **Click desktop sign to play or pause** | Let a click on the desktop sign toggle playback when its window permits input. |
 
+### Tube lighting and trim
+
+| Control | What it changes |
+| --- | --- |
+| **Colors → Rose and ice** | Use a rose title and an icy blue artist line. |
+| **Glow intensity** | Adjust the strength of the glow around the lit tubes. |
+| **Show glass trim** | Toggle the decorative glass detailing. |
+| **Reset neon look** | Restore the default appearance and music response settings. |
+
 <details>
 <summary>What happens when playback stops?</summary>
 

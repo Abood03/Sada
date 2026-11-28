@@ -24,6 +24,7 @@ public partial class App : Application
     Forms.NotifyIcon? tray;
     Forms.ContextMenuStrip? trayMenu;
     readonly Dictionary<(WidgetKind, string), DesktopWidget> widgets = new();
+    readonly HashSet<DesktopWidget> coveredWidgets = new();
     readonly DispatcherTimer renderTimer = new(DispatcherPriority.Render);
     readonly DispatcherTimer updateTimer = new(DispatcherPriority.Background);
     readonly DispatcherTimer mediaTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
@@ -36,6 +37,7 @@ public partial class App : Application
     long lastFrame;
     long lastLyricsFrame;
     long lastDesktopCheck;
+    long nextCoverageCheck;
     long lastProfileCheck;
     int lastScheduledMinute = -1;
     SceneProfile? activeProcessProfile;
@@ -527,17 +529,13 @@ public partial class App : Application
         SetLyricsMessage(lyrics.Lines.Count > 0 ? $"Synced lyrics · {source}" : $"Untimed lyrics · {source}");
     }
 
-    internal TimeSpan LyricsPosition
+    internal TimeSpan LyricsPositionFor(MediaSnapshot song)
     {
-        get
-        {
-            var song = Media.Current;
 #if SADA_LYRICS_STUDIO
-            if (IsEditedTiming) return song.Position;
+        if (IsEditedTiming) return song.Position;
 #endif
-            var adjusted = song.Position + TimeSpan.FromSeconds(LyricsOffsetFor(song.LyricsKey).Seconds);
-            return adjusted > TimeSpan.Zero ? adjusted : TimeSpan.Zero;
-        }
+        var adjusted = song.Position + TimeSpan.FromSeconds(LyricsOffsetFor(song.LyricsKey).Seconds);
+        return adjusted > TimeSpan.Zero ? adjusted : TimeSpan.Zero;
     }
 
     (double Seconds, bool Manual, bool Measured) LyricsOffsetFor(string key)
@@ -703,7 +701,16 @@ public partial class App : Application
 
     void Sample()
     {
-        Data.Sample(Media.Current);
+        bool readSystem = widgets.Keys.Any(key => key.Item1 is WidgetKind.System or WidgetKind.Disks) ||
+            (dashboard.IsVisible && dashboard.WindowState != WindowState.Minimized && dashboard.WantsSystemReadings) ||
+            (sceneEditor?.IsVisible == true && (Scene.Widget(WidgetKind.System).Enabled || Scene.Widget(WidgetKind.Disks).Enabled));
+        Data.Sample(Media.Current, readSystem);
+        var ms = timer.ElapsedMilliseconds;
+        if (widgets.Count > 0 && ms - lastDesktopCheck > 4000)
+        {
+            lastDesktopCheck = ms;
+            RefreshWidgets();
+        }
         _ = UpdateWeatherAsync();
         if (Audio.Error is { } error && !Audio.IsRunning && Status != error) SetStatus(error);
         if (timer.ElapsedMilliseconds - lastProfileCheck > 3100)
@@ -748,6 +755,8 @@ public partial class App : Application
 
     internal void RefreshWidgets(bool rebuild = false)
     {
+        nextCoverageCheck = 0;
+        coveredWidgets.Clear();
         var screens = Forms.Screen.AllScreens;
         var primary = screens.FirstOrDefault(s => s.DeviceName == Scene.MonitorName) ?? Forms.Screen.PrimaryScreen ?? screens.FirstOrDefault();
         if (primary is null) return;
@@ -811,32 +820,47 @@ public partial class App : Application
     void Render()
     {
         var ms = timer.ElapsedMilliseconds;
+        bool showDashboard = dashboard.IsVisible && dashboard.WindowState != WindowState.Minimized;
+        bool showEditor = sceneEditor is { IsVisible: true, WindowState: not WindowState.Minimized };
+        bool showFull = full?.IsVisible == true;
+        if (Prefs.PauseWhenCovered && widgets.Count > 0 && ms >= nextCoverageCheck)
+        {
+            nextCoverageCheck = ms + 175;
+            coveredWidgets.Clear();
+            Window? opaque = full is { IsVisible: true, AllowsTransparency: false } ? full : showDashboard ? dashboard : null;
+            var opaqueHandle = opaque is null ? 0 : DesktopInterop.WindowHandle(opaque);
+            foreach (var widget in widgets.Values)
+                if (widget.IsVisible && widget.ScenePlacement != Placement.OnTop && DesktopInterop.Covered(widget, opaqueHandle))
+                    coveredWidgets.Add(widget);
+        }
+
         if (ms - lastLyricsFrame >= 16)
         {
             lastLyricsFrame = ms;
-            sceneEditor?.RenderLyrics();
-            if (dashboard.IsVisible && dashboard.WindowState != WindowState.Minimized) dashboard.RenderLyrics();
+            if (showEditor) sceneEditor?.RenderLyrics();
+            if (showDashboard) dashboard.RenderLyrics();
             foreach (var pair in widgets)
-                if (pair.Key.Item1 == WidgetKind.Lyrics) pair.Value.RenderLyrics();
-            full?.RenderLyrics();
+                if (pair.Key.Item1 == WidgetKind.Lyrics && CanDraw(pair.Value)) pair.Value.RenderLyrics();
+            if (showFull) full?.RenderLyrics();
         }
         var fps = Math.Clamp(Prefs.Fps == 0 ? 120 : Prefs.Fps, 15, 120);
         if (ms - lastFrame < 1000d / fps - 1) return;
+        if (!showDashboard && !showEditor && !showFull && !widgets.Values.Any(CanDraw) &&
+            !(Prefs.AdaptiveLyricsTiming && !Prefs.Microphone && Lyrics is { Lines.Count: > 0 }))
+            return;
         var frame = Audio.GetFrame();
         if (Prefs.ReduceOnSilence && frame.Level < .005 && ms - lastFrame < 50) return;
         lastFrame = ms;
-        sceneEditor?.Render(frame);
+        if (showEditor) sceneEditor?.Render(frame);
         if (Lyrics is not null) ObserveLyricTiming(frame, Media.Current);
-        if (dashboard.IsVisible && dashboard.WindowState != WindowState.Minimized) dashboard.Render(frame);
-        if (ms - lastDesktopCheck > 4000)
-        {
-            lastDesktopCheck = ms;
-            RefreshWidgets();
-        }
+        if (showDashboard) dashboard.Render(frame);
         foreach (var w in widgets.Values)
-            if (!Prefs.PauseWhenCovered || w.ScenePlacement == Placement.OnTop || !DesktopInterop.Covered(w)) w.Render(frame);
-        full?.Render(frame);
+            if (CanDraw(w)) w.Render(frame);
+        if (showFull) full?.Render(frame);
     }
+
+    bool CanDraw(DesktopWidget widget) =>
+        widget.IsVisible && (!Prefs.PauseWhenCovered || !coveredWidgets.Contains(widget));
 
     internal void ExitApp()
     {

@@ -14,8 +14,9 @@ internal static class Program
         var app = new App();
         var scene = new SceneOptions();
         typeof(App).GetProperty("Prefs", Instance)!.SetValue(app, new Preferences { Scene = scene });
-        var type = typeof(App).Assembly.GetType("Sada.FullNeonOverlay", true)!;
-        var overlay = (Canvas)Activator.CreateInstance(type, Instance, null, [app], null)!;
+        var type = typeof(App).Assembly.GetType("Sada.FullWidgetOverlay", true)!;
+        Canvas Overlay(WidgetKind kind) => (Canvas)Activator.CreateInstance(type, Instance, null, [app, kind], null)!;
+        var overlay = Overlay(WidgetKind.Neon);
         var apply = type.GetMethod("Apply", Instance)!;
 
         apply.Invoke(overlay, null);
@@ -54,6 +55,34 @@ internal static class Program
         scene.FullNeon = false;
         apply.Invoke(overlay, null);
         Check(overlay.Visibility == Visibility.Collapsed, "Fullscreen control can hide its overlay independently");
+
+        var glitch = Overlay(WidgetKind.GlitchBox);
+        apply.Invoke(glitch, null);
+        Check(glitch.Visibility == Visibility.Collapsed, "Fullscreen Glitch Box is off by default");
+        var glitchOptions = scene.Widget(WidgetKind.GlitchBox);
+        glitchOptions.Opacity = .64;
+        glitchOptions.RelativeLeft = .18;
+        scene.FullGlitchBox = true;
+        scene.FullGlitchX = .30;
+        scene.FullGlitchY = .55;
+        apply.Invoke(glitch, null);
+        glitch.Measure(new Size(1280, 800));
+        glitch.Arrange(new Rect(0, 0, 1280, 800));
+        glitch.UpdateLayout();
+        var glitchHandle = (Thumb)glitch.Children[1];
+        Check(!glitchOptions.Enabled && glitch.Visibility == Visibility.Visible && overlay.Visibility == Visibility.Collapsed,
+            "Fullscreen Glitch Box is independent from desktop and Neon");
+        Check(Math.Abs(Canvas.GetLeft(glitchHandle) - (1280 - glitchHandle.ActualWidth) * .30) < .01 &&
+            glitchHandle.ActualWidth == glitchHandle.ActualHeight && glitch.Children[0].Opacity == .64,
+            "Fullscreen Glitch Box uses its saved position, square shape, and opacity");
+        glitchHandle.RaiseEvent(new DragStartedEventArgs(0, 0) { RoutedEvent = Thumb.DragStartedEvent });
+        var glitchArea = (Rect)getArea.Invoke(glitch, null)!;
+        move.Invoke(glitch, [new Point(glitchArea.Left, glitchArea.Bottom), glitchArea]);
+        glitchHandle.RaiseEvent(new DragCompletedEventArgs(0, 0, false) { RoutedEvent = Thumb.DragCompletedEvent });
+        var updated = Preferences.Clone(scene);
+        Check(updated.FullGlitchBox && updated.FullGlitchX == 0 && updated.FullGlitchY == 1 &&
+            updated.FullNeonX == 1 && updated.FullNeonY == 0 && glitchOptions.RelativeLeft == .18,
+            "Dragging Glitch Box persists only its own fullscreen position");
 
         void Layout(double width, double height)
         {

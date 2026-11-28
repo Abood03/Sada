@@ -14,7 +14,8 @@ internal sealed class DesktopWidget : Window
     readonly System.Drawing.Rectangle bounds;
     readonly bool fullscreen;
     readonly WidgetView view;
-    readonly FullNeonOverlay? fullNeon;
+    readonly FullWidgetOverlay? fullNeon;
+    readonly FullWidgetOverlay? fullGlitch;
     readonly Border shell;
     readonly System.Windows.Controls.Primitives.Thumb resize;
     Point? dragStart;
@@ -59,8 +60,10 @@ internal sealed class DesktopWidget : Window
         if (fullscreen)
         {
             resize.Visibility = Visibility.Collapsed;
-            fullNeon = new FullNeonOverlay(app);
+            fullNeon = new FullWidgetOverlay(app, WidgetKind.Neon);
+            fullGlitch = new FullWidgetOverlay(app, WidgetKind.GlitchBox);
             grid.Children.Add(fullNeon);
+            grid.Children.Add(fullGlitch);
             PreviewKeyDown += HandleKeys;
             Loaded += (_, _) => Keyboard.Focus(this);
         }
@@ -96,6 +99,7 @@ internal sealed class DesktopWidget : Window
         {
             neonClick?.Stop();
             fullNeon?.Release();
+            fullGlitch?.Release();
             view.Release();
         };
     }
@@ -121,6 +125,7 @@ internal sealed class DesktopWidget : Window
             DesktopInterop.SetScreenBounds(this, bounds);
             view.Apply();
             fullNeon?.Apply();
+            fullGlitch?.Apply();
             return;
         }
         var options = app.Scene.Widget(kind);
@@ -250,6 +255,7 @@ internal sealed class DesktopWidget : Window
         if (!IsVisible) return;
         view.Render(frame, kind is WidgetKind.CursorTrail or WidgetKind.Flock or WidgetKind.Fluid ? DesktopInterop.Pointer(this) : new(double.NaN, double.NaN));
         fullNeon?.Render(frame);
+        fullGlitch?.Render(frame);
     }
 
     public void RenderLyrics()

@@ -72,6 +72,7 @@ internal static class Program
         var lateInk = Pixels(inkSign, arabic, Quiet, options, 2470, Colors.Red, Colors.Red);
         Assert(InkBias(lateInk) > 10_000, "album artwork arriving for the current track updates the tubes");
         CheckAlbumArtwork(latin);
+        CheckGlassAndGlow(latin);
 
         if (SystemParameters.ClientAreaAnimation)
         {
@@ -81,6 +82,7 @@ internal static class Program
             var rest = Draw(reactive, latin, Quiet, theme, 1100);
             var pulse = Draw(reactive, latin, Beat, theme, 1200);
             Assert(pulse > rest, "flare increases rendered glow when a beat arrives");
+            CheckReactiveModes(latin);
         }
 
         foreach (var style in Enum.GetValues<NeonLettering>())
@@ -94,6 +96,76 @@ internal static class Program
             Assert(pixels > 20_000, $"{style} / {mode} renders at a narrow widget size");
         }
         Console.WriteLine("PASS neon cover colors, title reveal, dark glass, pause, idle and reactions");
+    }
+
+    static void CheckGlassAndGlow(MediaSnapshot track)
+    {
+        var sign = Create(560, 185);
+        var options = new NeonOptions { GlowIntensity = 0, GlassTrim = true, ShowArtist = false, ShowNote = false,
+            Flicker = NeonFlicker.Steady, Reaction = NeonReaction.Steady };
+        Draw(sign, track, Quiet, options, 0);
+        var filament = Pixels(sign, track, Quiet, options, 1250, Colors.DeepSkyBlue);
+        options.GlowIntensity = 2;
+        var halo = Pixels(sign, track, Quiet, options, 1275, Colors.DeepSkyBlue);
+        int illuminatedOutside = 0;
+        for (int i = 3; i < halo.Length; i += 4)
+            if (filament[i] == 0 && halo[i] >= 5) illuminatedOutside++;
+        Assert(Energy(filament) > 100_000, "filament stays visibly lit with the bloom switched off");
+        Assert(illuminatedOutside > 500 && Energy(halo) > Energy(filament), "the glow control projects a halo beyond the glass");
+
+        options.GlowIntensity = 0;
+        options.GlassTrim = false;
+        var plain = Pixels(sign, track, Quiet, options, 1300, Colors.DeepSkyBlue);
+        Assert(!plain.AsSpan().SequenceEqual(filament), "glass trim changes the lit edge independently from the halo");
+        var paused = track with { IsPlaying = false };
+        Draw(sign, paused, Quiet, options, 1320, Colors.DeepSkyBlue);
+        var untrimmedDark = Pixels(sign, paused, Quiet, options, 1620, Colors.DeepSkyBlue);
+        options.GlassTrim = true;
+        var trimmedDark = Pixels(sign, paused, Quiet, options, 1640, Colors.DeepSkyBlue);
+        Assert(Energy(trimmedDark) > Energy(untrimmedDark), "glass trim adds a reflection on the unlit sign");
+    }
+
+    static void CheckReactiveModes(MediaSnapshot track)
+    {
+        const int width = 560;
+        var sign = Create(width, 125);
+        track = track with { Title = "WIDE HORIZON" };
+        var options = new NeonOptions { Lettering = NeonLettering.Block, Reaction = NeonReaction.Equalizer,
+            ShowNote = false, ShowArtist = false, Flicker = NeonFlicker.Steady, GlowIntensity = 0 };
+        Draw(sign, track, Quiet, options, 0);
+        var rest = Pixels(sign, track, Quiet, options, 1150);
+        var lowBands = Pixels(sign, track, Beat with { Spectrum = [1, .9f, .01f, .01f] }, options, 2050);
+        var highBands = Pixels(sign, track, Beat with { Spectrum = [.01f, .01f, .9f, 1] }, options, 2950);
+        int left = width, right = 0;
+        for (int i = 3; i < rest.Length; i += 4)
+        {
+            if (rest[i] < 30) continue;
+            int x = i / 4 % width;
+            left = Math.Min(left, x);
+            right = Math.Max(right, x);
+        }
+        int middle = (left + right) / 2;
+        long Delta(byte[] lit, bool leftSide)
+        {
+            long delta = 0;
+            for (int i = 0; i < lit.Length; i += 4)
+            {
+                if ((i / 4 % width < middle) != leftSide) continue;
+                delta += lit[i] - rest[i] + lit[i + 1] - rest[i + 1] + lit[i + 2] - rest[i + 2];
+            }
+            return delta;
+        }
+        Assert(Delta(lowBands, leftSide: true) > Delta(lowBands, leftSide: false) &&
+            Delta(highBands, leftSide: false) > Delta(highBands, leftSide: true),
+            "equalizer lights the part of the title corresponding to the active spectrum");
+
+        options.Reaction = NeonReaction.Surge;
+        long quiet = Draw(sign, track, Quiet, options, 3800);
+        var strong = Beat with { Beat = 0 };
+        long breath = Draw(sign, track, strong, options, 4650);
+        long dip = Draw(sign, track, Beat, options, 4700);
+        long recovered = Draw(sign, track, strong, options, 5450);
+        Assert(breath > quiet && dip < breath && recovered > dip, "surge follows volume and dips briefly on a strong kick");
     }
 
     static void CheckAlbumArtwork(MediaSnapshot track)

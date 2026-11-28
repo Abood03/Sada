@@ -51,6 +51,8 @@ public sealed class AudioEngine : IDisposable
     private CaptureSession? _session;
     private AudioDevice? _selected;
     private int _ringPosition;
+    // At FftSize the ring is entirely zero, including any trailing silence after playback.
+    private int _framesSinceSignal = FftSize;
     private long _lastSamples;
     private long _lastSignalTimestamp;
     private long _sampleRevision;
@@ -152,13 +154,15 @@ public sealed class AudioEngine : IDisposable
             long revision;
             long sampleTimestamp;
             bool hasSamples;
+            bool hasSignal;
             lock (_sampleLock)
             {
                 sampleRate = _sampleRate;
                 revision = _sampleRevision;
                 sampleTimestamp = _lastSignalTimestamp;
                 hasSamples = _lastSamples != 0 && Stopwatch.GetElapsedTime(_lastSamples, now).TotalSeconds <= SilenceTimeout;
-                if (hasSamples && revision != _frameSampleRevision)
+                hasSignal = hasSamples && _framesSinceSignal < FftSize;
+                if (hasSignal && revision != _frameSampleRevision)
                 {
                     CopyRing(_leftRing, _leftSamples);
                     CopyRing(_rightRing, _rightSamples);
@@ -168,22 +172,24 @@ public sealed class AudioEngine : IDisposable
             float beat = _frame.Beat * (float)Math.Exp(-elapsed / 0.14);
             if (hasSamples && revision == _frameSampleRevision)
             {
-                _frame = _frame with { Beat = beat };
+                if (_frame.Beat != beat)
+                    _frame = _frame with { Beat = beat };
                 return _frame;
             }
 
             _frameSampleRevision = revision;
-            if (!hasSamples)
+            // The waveform represents the last 1/36 second of samples.
+            long waveformCenter = hasSamples ? sampleTimestamp - Stopwatch.Frequency / 72 : 0;
+            if (!hasSignal)
             {
                 _previousBass = 0;
-                _bassAverage *= (float)Math.Exp(-elapsed / 0.6);
-                _frame = EmptyFrame with { Beat = beat };
+                _bassAverage *= (float)Math.Exp(-elapsed / (hasSamples ? 0.68 : 0.6));
+                _frame = waveformCenter == 0 && beat == 0 ? EmptyFrame
+                    : EmptyFrame with { Beat = beat, SignalTimestamp = waveformCenter };
                 return _frame;
             }
 
-            // The waveform represents the last 1/36 second of samples.
-            long waveformCenter = sampleTimestamp - Stopwatch.Frequency / 72;
-            _frame = Analyze(sampleRate, now, elapsed, beat) with { SignalTimestamp = waveformCenter };
+            _frame = Analyze(sampleRate, now, elapsed, beat, waveformCenter);
             return _frame;
         }
     }
@@ -195,7 +201,7 @@ public sealed class AudioEngine : IDisposable
         Array.Copy(source, 0, target, tailLength, _ringPosition);
     }
 
-    private AudioFrame Analyze(int sampleRate, long now, double elapsed, float beat)
+    private AudioFrame Analyze(int sampleRate, long now, double elapsed, float beat, long waveformCenter)
     {
         for (int i = 0; i < FftSize; i++)
         {
@@ -258,7 +264,7 @@ public sealed class AudioEngine : IDisposable
 
         float rms = MathF.Sqrt(powerSum / (2 * waveSamples));
         float level = MathF.Sqrt(Math.Clamp(rms * gain * 2.2f, 0, 1));
-        return new AudioFrame(left, right, spectrum, level, beat);
+        return new AudioFrame(left, right, spectrum, level, beat) { SignalTimestamp = waveformCenter };
     }
 
     private float FindBandPeak(float lowerBin, float upperBin)
@@ -351,6 +357,7 @@ public sealed class AudioEngine : IDisposable
     private void ResetSamples()
     {
         _ringPosition = 0;
+        _framesSinceSignal = FftSize;
         _lastSamples = 0;
         _lastSignalTimestamp = 0;
         _sampleRevision++;
@@ -381,14 +388,38 @@ public sealed class AudioEngine : IDisposable
             if (_session != session)
                 return;
 
-            for (int i = 0; i < samples; i++)
+            if (silent)
             {
-                int offset = i * session.BytesPerFrame;
-                float left = silent ? 0 : session.ReadSample(bytes.AsSpan(offset));
-                float right = silent || session.Channels == 1 ? left : session.ReadSample(bytes.AsSpan(offset + session.BytesPerSample));
-                _leftRing[_ringPosition] = left;
-                _rightRing[_ringPosition] = right;
-                _ringPosition = (_ringPosition + 1) & (FftSize - 1);
+                if (_framesSinceSignal < FftSize)
+                {
+                    int tail = Math.Min(samples, FftSize - _ringPosition);
+                    int head = Math.Min(samples - tail, _ringPosition);
+                    Array.Clear(_leftRing, _ringPosition, tail);
+                    Array.Clear(_rightRing, _ringPosition, tail);
+                    Array.Clear(_leftRing, 0, head);
+                    Array.Clear(_rightRing, 0, head);
+                }
+
+                _ringPosition = (_ringPosition + samples) & (FftSize - 1);
+                _framesSinceSignal += Math.Min(samples, FftSize - _framesSinceSignal);
+            }
+            else
+            {
+                int lastSignalIndex = -1;
+                for (int i = 0; i < samples; i++)
+                {
+                    int offset = i * session.BytesPerFrame;
+                    float left = session.ReadSample(bytes.AsSpan(offset));
+                    float right = session.Channels == 1 ? left : session.ReadSample(bytes.AsSpan(offset + session.BytesPerSample));
+                    _leftRing[_ringPosition] = left;
+                    _rightRing[_ringPosition] = right;
+                    _ringPosition = (_ringPosition + 1) & (FftSize - 1);
+                    if (left != 0 || right != 0)
+                        lastSignalIndex = i;
+                }
+
+                _framesSinceSignal = lastSignalIndex >= 0 ? Math.Min(samples - 1 - lastSignalIndex, FftSize)
+                    : _framesSinceSignal + Math.Min(samples, FftSize - _framesSinceSignal);
             }
 
             _lastSamples = Stopwatch.GetTimestamp();

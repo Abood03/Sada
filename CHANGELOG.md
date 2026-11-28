@@ -2,7 +2,32 @@
 
 [Home](README.md) · [Roadmap](docs/roadmap.md) · [GitHub releases](https://github.com/Abood03/Sada/releases)
 
-Sada first appeared on GitHub as **1.2.0**. This history also covers the earlier Windows builds and the changes that shipped together in **1.4.1**.
+Sada first appeared on GitHub as **1.2.0**. This history includes earlier Windows builds and the development builds rolled into the published releases.
+
+## 1.5.3 — Less rendering and background work
+
+[GitHub release](https://github.com/Abood03/Sada/releases/tag/v1.5.3). Includes the changes from development builds 1.5.0 through 1.5.2 below.
+
+- Halo reuses drawing resources and calculates its rotation once per frame. Mist reuses its gradients.
+- Studio previews update about 30 times per second at most. **Pause covered widgets** now also applies to desktop lyrics.
+- Sada collects system telemetry on demand for system and disk widgets, and skips the FFT when the audio analysis window is silent.
+
+## 1.5.2 — About page (development build)
+
+- Added an **About** page with the installed version, credit for Abood, and a link to his GitHub profile.
+
+## 1.5.1 — Cover-colored lyrics (development build)
+
+- Lyrics on the desktop, in full screen, and in Lyrics Studio's preview use the cover's primary hue. The active letters fill in with a lighter shade of that color as the song plays.
+- The color refreshes when artwork is delivered or replaced. Tracks without artwork use neutral text and a mint highlight.
+
+## 1.5.0 — Neon Sign and Glitch Box (development build)
+
+- Refined Neon Sign's letter shapes, tube lighting, and progressive relighting. Added adjustable glow, optional glass trim, and a **Rose and ice** palette.
+- Added **Glitch Box**, a desktop widget for album art or the current title with adjustable glitch effects, music response, scanlines, accent colors, and idle behavior.
+- Glitch Box can also appear independently in full screen. Its display options and positions are saved with the scene.
+
+See [Neon Sign and motion](docs/neon-and-motion.md) and the [Glitch Box guide](docs/glitch-box.md).
 
 ## 1.4.1 — Album-colored neon and unlit glass
 
